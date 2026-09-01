@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio to Video Generator</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;900&family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <h1>🎬 Audio to Video Creator</h1>
+            <p>Upload audio → Add captions → Export video</p>
+        </header>
+
+        <!-- Main Layout -->
+        <div class="main-layout">
+            <!-- Left Panel: Controls -->
+            <aside class="controls-panel">
+                <!-- Audio Upload -->
+                <section class="panel-section">
+                    <h3>📁 Audio File</h3>
+                    <div class="upload-zone" id="audioDropZone">
+                        <input type="file" id="audioInput" accept="audio/*" hidden>
+                        <div class="upload-content">
+                            <span class="upload-icon">🎵</span>
+                            <p>Drop audio file or <button onclick="document.getElementById('audioInput').click()">Browse</button></p>
+                        </div>
+                    </div>
+                    <div id="audioInfo" class="audio-info hidden">
+                        <span id="audioFileName"></span>
+                        <span id="audioDuration"></span>
+                    </div>
+                    <audio id="audioPlayer" hidden></audio>
+                </section>
+
+                <!-- Video Settings -->
+                <section class="panel-section">
+                    <h3>⚙️ Video Settings</h3>
+                    <div class="form-group">
+                        <label>Resolution</label>
+                        <select id="resolution">
+                            <option value="1920x1080">1080p (1920×1080)</option>
+                            <option value="1280x720" selected>720p (1280×720)</option>
+                            <option value="1080x1920">9:16 Reels (1080×1920)</option>
+                            <option value="1080x1080">Square (1080×1080)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>FPS</label>
+                        <select id="fps">
+                            <option value="24">24 FPS</option>
+                            <option value="30" selected>30 FPS</option>
+                            <option value="60">60 FPS</option>
+                        </select>
+                    </div>
+                </section>
+
+                <!-- Background Style -->
+                <section class="panel-section">
+                    <h3>🎨 Background</h3>
+                    <div class="bg-options">
+                        <label class="bg-option active" data-bg="gradient">
+                            <input type="radio" name="bgType" value="gradient" checked>
+                            <div class="bg-preview gradient-preview"></div>
+                            <span>Gradient</span>
+                        </label>
+                        <label class="bg-option" data-bg="solid">
+                            <input type="radio" name="bgType" value="solid">
+                            <div class="bg-preview solid-preview"></div>
+                            <span>Solid</span>
+                        </label>
+                        <label class="bg-option" data-bg="image">
+                            <input type="radio" name="bgType" value="image">
+                            <div class="bg-preview image-preview">🖼️</div>
+                            <span>Image</span>
+                        </label>
+                        <label class="bg-option" data-bg="particles">
+                            <input type="radio" name="bgType" value="particles">
+                            <div class="bg-preview particles-preview">✨</div>
+                            <span>Animated</span>
+                        </label>
+                    </div>
+
+                    <!-- Gradient Options -->
+                    <div id="gradientOptions" class="sub-options">
+                        <div class="color-row">
+                            <div class="form-group">
+                                <label>Color 1</label>
+                                <input type="color" id="gradColor1" value="#667eea">
+                            </div>
+                            <div class="form-group">
+                                <label>Color 2</label>
+                                <input type="color" id="gradColor2" value="#764ba2">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Animate Gradient</label>
+                            <input type="checkbox" id="animateGradient" checked>
+                        </div>
+                    </div>
+
+                    <!-- Solid Options -->
+                    <div id="solidOptions" class="sub-options hidden">
+                        <div class="form-group">
+                            <label>Color</label>
+                            <input type="color" id="solidColor" value="#1a1a2e">
+                        </div>
+                    </div>
+
+                    <!-- Image Options -->
+                    <div id="imageOptions" class="sub-options hidden">
+                        <input type="file" id="bgImageInput" accept="image/*">
+                    </div>
+                </section>
+
+                <!-- Caption Style -->
+                <section class="panel-section">
+                    <h3>✏️ Caption Style</h3>
+                    <div class="form-group">
+                        <label>Font Family</label>
+                        <select id="captionFont">
+                            <option value="Poppins">Poppins</option>
+                            <option value="Montserrat">Montserrat</option>
+                            <option value="Arial">Arial</option>
+                            <option value="Georgia">Georgia</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Font Size: <span id="fontSizeVal">48</span>px</label>
+                        <input type="range" id="captionSize" min="20" max="120" value="48">
+                    </div>
+                    <div class="color-row">
+                        <div class="form-group">
+                            <label>Text Color</label>
+                            <input type="color" id="captionColor" value="#ffffff">
+                        </div>
+                        <div class="form-group">
+                            <label>Highlight</label>
+                            <input type="color" id="highlightColor" value="#ffdd57">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Text Shadow</label>
+                        <select id="textShadow">
+                            <option value="none">None</option>
+                            <option value="soft" selected>Soft Shadow</option>
+                            <option value="hard">Hard Shadow</option>
+                            <option value="outline">Outline</option>
+                            <option value="glow">Glow</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Animation</label>
+                        <select id="captionAnimation">
+                            <option value="none">None</option>
+                            <option value="fadeIn" selected>Fade In</option>
+                            <option value="typewriter">Typewriter</option>
+                            <option value="slideUp">Slide Up</option>
+                            <option value="scaleIn">Scale In</option>
+                            <option value="wordByWord">Word by Word</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Position</label>
+                        <select id="captionPosition">
+                            <option value="center">Center</option>
+                            <option value="bottom">Bottom</option>
+                            <option value="top">Top</option>
+                        </select>
+                    </div>
+                </section>
+
+                <!-- Extra Elements -->
+                <section class="panel-section">
+                    <h3>🧩 Elements</h3>
+                    <div class="form-group">
+                        <label>Show Waveform</label>
+                        <input type="checkbox" id="showWaveform" checked>
+                    </div>
+                    <div class="form-group">
+                        <label>Show Progress Bar</label>
+                        <input type="checkbox" id="showProgress" checked>
+                    </div>
+                    <div class="form-group">
+                        <label>Progress Color</label>
+                        <input type="color" id="progressColor" value="#ffdd57">
+                    </div>
+                </section>
+            </aside>
+
+            <!-- Center: Preview + Caption Editor -->
+            <main class="preview-area">
+                <!-- Video Preview Canvas -->
+                <div class="preview-wrapper">
+                    <div id="previewContainer" class="preview-container">
+                        <canvas id="previewCanvas"></canvas>
+                        <div class="preview-overlay" id="previewOverlay">
+                            <span>Upload audio to preview</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Playback Controls -->
+                <div class="playback-controls">
+                    <button id="playBtn" class="play-btn" disabled>▶️</button>
+                    <span id="currentTime">0:00</span>
+                    <div class="scrubber-container">
+                        <input type="range" id="scrubber" min="0" max="100" value="0" step="0.1">
+                    </div>
+                    <span id="totalTime">0:00</span>
+                </div>
+
+                <!-- Caption Editor -->
+                <div class="caption-editor">
+                    <div class="caption-header">
+                        <h3>📝 Captions Timeline</h3>
+                        <div class="caption-actions">
+                            <button id="addCaptionBtn" class="btn btn-primary">+ Add Caption</button>
+                            <button id="autoGenerateBtn" class="btn btn-secondary">🤖 Auto Split</button>
+                            <button id="importSrtBtn" class="btn btn-secondary">📄 Import SRT</button>
+                            <input type="file" id="srtInput" accept=".srt,.vtt" hidden>
+                        </div>
+                    </div>
+
+                    <!-- Caption List -->
+                    <div id="captionList" class="caption-list">
+                        <div class="caption-empty">
+                            <p>No captions yet. Add manually or paste your script below:</p>
+                            <textarea id="scriptInput" placeholder="Paste your full script here and click 'Auto Split' to generate timed captions..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export -->
+                <div class="export-section">
+                    <button id="exportBtn" class="btn btn-export" disabled>
+                        🎬 Export Video
+                    </button>
+                    <div id="exportProgress" class="export-progress hidden">
+                        <div class="progress-bar">
+                            <div id="progressFill" class="progress-fill"></div>
+                        </div>
+                        <span id="progressText">Rendering... 0%</span>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
