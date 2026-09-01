@@ -1,115 +1,85 @@
-// ===== STATE MANAGEMENT =====
+// ===== STATE =====
 const state = {
-    audio: null,
-    audioBuffer: null,
-    audioContext: null,
-    analyser: null,
-    sourceNode: null,
-    duration: 0,
-    isPlaying: false,
-    currentTime: 0,
-    captions: [],
+    audio: null, audioBuffer: null, audioContext: null,
+    analyser: null, sourceNode: null, duration: 0,
+    isPlaying: false, currentTime: 0, captions: [],
+    layers: [],
     settings: {
-        resolution: [1280, 720],
-        fps: 30,
+        resolution: [1280, 720], fps: 30,
         bgType: 'gradient',
-        gradColor1: '#667eea',
-        gradColor2: '#764ba2',
-        animateGradient: true,
-        solidColor: '#1a1a2e',
-        bgImage: null,
-        captionFont: 'Poppins',
-        captionSize: 48,
-        captionColor: '#ffffff',
-        highlightColor: '#ffdd57',
-        textShadow: 'soft',
-        captionAnimation: 'fadeIn',
-        captionPosition: 'center',
-        showWaveform: true,
-        showProgress: true,
+        gradColor1: '#667eea', gradColor2: '#764ba2',
+        animateGradient: true, solidColor: '#1a1a2e',
+        bgImage: null, bgVideo: null,
+        captionFont: 'Poppins', captionSize: 48,
+        captionColor: '#ffffff', highlightColor: '#ffdd57',
+        textShadow: 'soft', captionAnimation: 'fadeIn',
+        captionPosition: 'center', enableEmoji: true,
+        showWaveform: true, showProgress: true,
         progressColor: '#ffdd57'
     },
-    animationId: null,
-    startTimestamp: 0,
-    bgImageObj: null
+    animationId: null, startTimestamp: 0,
+    bgImageObj: null, bgVideoObj: null,
+    particles: []
 };
 
-// ===== DOM ELEMENTS =====
 const $ = id => document.getElementById(id);
 const canvas = $('previewCanvas');
 const ctx = canvas.getContext('2d');
 
-// ===== INITIALIZE =====
+// ===== INIT =====
 function init() {
+    generateParticles();
     setupAudioUpload();
     setupControls();
     setupCaptionEditor();
+    setupLayers();
     setupExport();
     resizeCanvas();
 }
 
-// ===== AUDIO UPLOAD =====
+// ===== PARTICLES =====
+function generateParticles() {
+    state.particles = Array.from({ length: 60 }, (_, i) => ({
+        x: Math.random(), y: Math.random(),
+        speed: 0.2 + Math.random() * 0.8,
+        size: 1 + Math.random() * 3,
+        phase: Math.random() * Math.PI * 2
+    }));
+}
+
+// ===== AUDIO =====
 function setupAudioUpload() {
-    const dropZone = $('audioDropZone');
-    const audioInput = $('audioInput');
-
-    dropZone.addEventListener('click', () => audioInput.click());
-
-    dropZone.addEventListener('dragover', e => {
-        e.preventDefault();
-        dropZone.classList.add('dragover');
-    });
-
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.classList.remove('dragover');
-    });
-
-    dropZone.addEventListener('drop', e => {
-        e.preventDefault();
-        dropZone.classList.remove('dragover');
+    const dz = $('audioDropZone'), inp = $('audioInput');
+    dz.addEventListener('click', () => inp.click());
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+    dz.addEventListener('drop', e => {
+        e.preventDefault(); dz.classList.remove('dragover');
         if (e.dataTransfer.files[0]) loadAudio(e.dataTransfer.files[0]);
     });
-
-    audioInput.addEventListener('change', e => {
-        if (e.target.files[0]) loadAudio(e.target.files[0]);
-    });
+    inp.addEventListener('change', e => { if (e.target.files[0]) loadAudio(e.target.files[0]); });
 }
 
 async function loadAudio(file) {
     state.audio = file;
-
-    // Show file info
     $('audioFileName').textContent = file.name;
     $('audioInfo').classList.remove('hidden');
 
-    // Create audio context
-    if (!state.audioContext) {
-        state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    }
+    if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-    // Decode audio
-    const arrayBuffer = await file.arrayBuffer();
-    state.audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
+    const buf = await file.arrayBuffer();
+    state.audioBuffer = await state.audioContext.decodeAudioData(buf);
     state.duration = state.audioBuffer.duration;
 
     $('audioDuration').textContent = formatTime(state.duration);
     $('totalTime').textContent = formatTime(state.duration);
     $('previewOverlay').classList.add('hidden');
-
-    // Setup audio player
-    const audioPlayer = $('audioPlayer');
-    audioPlayer.src = URL.createObjectURL(file);
-
-    // Setup analyser
-    state.analyser = state.audioContext.createAnalyser();
-    state.analyser.fftSize = 256;
-
-    // Enable buttons
     $('playBtn').disabled = false;
     $('exportBtn').disabled = false;
-
-    // Setup scrubber
     $('scrubber').max = state.duration;
+
+    state.analyser = state.audioContext.createAnalyser();
+    state.analyser.fftSize = 256;
 
     resizeCanvas();
     renderFrame(0);
@@ -117,839 +87,614 @@ async function loadAudio(file) {
 
 // ===== CONTROLS =====
 function setupControls() {
-    // Resolution
-    $('resolution').addEventListener('change', e => {
-        const [w, h] = e.target.value.split('x').map(Number);
-        state.settings.resolution = [w, h];
-        resizeCanvas();
-        renderFrame(state.currentTime);
-    });
+    $('resolution').onchange = e => {
+        state.settings.resolution = e.target.value.split('x').map(Number);
+        resizeCanvas(); renderFrame(state.currentTime);
+    };
+    $('fps').onchange = e => { state.settings.fps = +e.target.value; };
 
-    // FPS
-    $('fps').addEventListener('change', e => {
-        state.settings.fps = parseInt(e.target.value);
-    });
-
-    // Background type
-    document.querySelectorAll('.bg-option').forEach(opt => {
-        opt.addEventListener('click', () => {
-            document.querySelectorAll('.bg-option').forEach(o => o.classList.remove('active'));
-            opt.classList.add('active');
-            state.settings.bgType = opt.dataset.bg;
-
-            $('gradientOptions').classList.toggle('hidden', state.settings.bgType !== 'gradient');
-            $('solidOptions').classList.toggle('hidden', state.settings.bgType !== 'solid');
-            $('imageOptions').classList.toggle('hidden', state.settings.bgType !== 'image');
-
+    // BG type
+    document.querySelectorAll('.bg-option').forEach(o => {
+        o.addEventListener('click', () => {
+            document.querySelectorAll('.bg-option').forEach(x => x.classList.remove('active'));
+            o.classList.add('active');
+            state.settings.bgType = o.dataset.bg;
+            ['gradient','solid','image','video'].forEach(t => {
+                const el = $(t + 'Options');
+                if (el) el.classList.toggle('hidden', state.settings.bgType !== t);
+            });
             renderFrame(state.currentTime);
         });
     });
 
-    // Gradient colors
-    $('gradColor1').addEventListener('input', e => {
-        state.settings.gradColor1 = e.target.value;
-        renderFrame(state.currentTime);
-    });
-    $('gradColor2').addEventListener('input', e => {
-        state.settings.gradColor2 = e.target.value;
-        renderFrame(state.currentTime);
-    });
-    $('animateGradient').addEventListener('change', e => {
-        state.settings.animateGradient = e.target.checked;
-    });
+    $('gradColor1').oninput = e => { state.settings.gradColor1 = e.target.value; renderFrame(state.currentTime); };
+    $('gradColor2').oninput = e => { state.settings.gradColor2 = e.target.value; renderFrame(state.currentTime); };
+    $('animateGradient').onchange = e => { state.settings.animateGradient = e.target.checked; };
+    $('solidColor').oninput = e => { state.settings.solidColor = e.target.value; renderFrame(state.currentTime); };
 
-    // Solid color
-    $('solidColor').addEventListener('input', e => {
-        state.settings.solidColor = e.target.value;
-        renderFrame(state.currentTime);
-    });
+    $('bgImageInput').onchange = e => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const img = new Image();
+        img.onload = () => { state.bgImageObj = img; renderFrame(state.currentTime); };
+        img.src = URL.createObjectURL(f);
+    };
 
-    // Background image
-    $('bgImageInput').addEventListener('change', e => {
-        const file = e.target.files[0];
-        if (file) {
-            const img = new Image();
-            img.onload = () => {
-                state.bgImageObj = img;
-                renderFrame(state.currentTime);
-            };
-            img.src = URL.createObjectURL(file);
-        }
-    });
+    // Background Video
+    $('bgVideoInput').onchange = e => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const vid = $('bgVideo');
+        vid.src = URL.createObjectURL(f);
+        vid.play();
+        state.bgVideoObj = vid;
+        renderFrame(state.currentTime);
+    };
 
     // Caption settings
-    $('captionFont').addEventListener('change', e => {
-        state.settings.captionFont = e.target.value;
-        renderFrame(state.currentTime);
+    const captionSettings = [
+        ['captionFont', 'captionFont'], ['captionColor', 'captionColor'],
+        ['highlightColor', 'highlightColor'], ['textShadow', 'textShadow'],
+        ['captionAnimation', 'captionAnimation'], ['captionPosition', 'captionPosition']
+    ];
+    captionSettings.forEach(([id, key]) => {
+        $(id).onchange = e => { state.settings[key] = e.target.value; renderFrame(state.currentTime); };
     });
 
-    $('captionSize').addEventListener('input', e => {
-        state.settings.captionSize = parseInt(e.target.value);
+    $('captionSize').oninput = e => {
+        state.settings.captionSize = +e.target.value;
         $('fontSizeVal').textContent = e.target.value;
         renderFrame(state.currentTime);
-    });
+    };
 
-    $('captionColor').addEventListener('input', e => {
-        state.settings.captionColor = e.target.value;
-        renderFrame(state.currentTime);
-    });
+    $('enableEmoji').onchange = e => { state.settings.enableEmoji = e.target.checked; renderFrame(state.currentTime); };
+    $('showWaveform').onchange = e => { state.settings.showWaveform = e.target.checked; renderFrame(state.currentTime); };
+    $('showProgress').onchange = e => { state.settings.showProgress = e.target.checked; renderFrame(state.currentTime); };
+    $('progressColor').oninput = e => { state.settings.progressColor = e.target.value; renderFrame(state.currentTime); };
 
-    $('highlightColor').addEventListener('input', e => {
-        state.settings.highlightColor = e.target.value;
-        renderFrame(state.currentTime);
-    });
-
-    $('textShadow').addEventListener('change', e => {
-        state.settings.textShadow = e.target.value;
-        renderFrame(state.currentTime);
-    });
-
-    $('captionAnimation').addEventListener('change', e => {
-        state.settings.captionAnimation = e.target.value;
-        renderFrame(state.currentTime);
-    });
-
-    $('captionPosition').addEventListener('change', e => {
-        state.settings.captionPosition = e.target.value;
-        renderFrame(state.currentTime);
-    });
-
-    // Elements
-    $('showWaveform').addEventListener('change', e => {
-        state.settings.showWaveform = e.target.checked;
-        renderFrame(state.currentTime);
-    });
-
-    $('showProgress').addEventListener('change', e => {
-        state.settings.showProgress = e.target.checked;
-        renderFrame(state.currentTime);
-    });
-
-    $('progressColor').addEventListener('input', e => {
-        state.settings.progressColor = e.target.value;
-        renderFrame(state.currentTime);
-    });
-
-    // Playback
-    $('playBtn').addEventListener('click', togglePlayback);
-
-    $('scrubber').addEventListener('input', e => {
-        state.currentTime = parseFloat(e.target.value);
+    $('playBtn').onclick = togglePlayback;
+    $('scrubber').oninput = e => {
+        state.currentTime = +e.target.value;
         $('currentTime').textContent = formatTime(state.currentTime);
         if (!state.isPlaying) renderFrame(state.currentTime);
-    });
+    };
 }
 
 // ===== PLAYBACK =====
 function togglePlayback() {
-    if (state.isPlaying) {
-        stopPlayback();
-    } else {
-        startPlayback();
-    }
+    state.isPlaying ? stopPlayback() : startPlayback();
 }
 
 function startPlayback() {
     if (!state.audioBuffer) return;
-
     state.isPlaying = true;
     $('playBtn').textContent = '⏸️';
 
-    // Create audio source
     state.sourceNode = state.audioContext.createBufferSource();
     state.sourceNode.buffer = state.audioBuffer;
-
-    // Connect analyser
     state.sourceNode.connect(state.analyser);
     state.analyser.connect(state.audioContext.destination);
 
-    // Start from current position
     const offset = state.currentTime;
     state.startTimestamp = state.audioContext.currentTime - offset;
     state.sourceNode.start(0, offset);
+    state.sourceNode.onended = () => { if (state.isPlaying) stopPlayback(); };
 
-    state.sourceNode.onended = () => {
-        if (state.isPlaying) stopPlayback();
-    };
-
-    // Animation loop
-    function animate() {
+    (function animate() {
         if (!state.isPlaying) return;
-
         state.currentTime = state.audioContext.currentTime - state.startTimestamp;
-
-        if (state.currentTime >= state.duration) {
-            stopPlayback();
-            return;
-        }
-
+        if (state.currentTime >= state.duration) { stopPlayback(); return; }
         $('scrubber').value = state.currentTime;
         $('currentTime').textContent = formatTime(state.currentTime);
-
         renderFrame(state.currentTime);
         state.animationId = requestAnimationFrame(animate);
-    }
-
-    animate();
+    })();
 }
 
 function stopPlayback() {
     state.isPlaying = false;
     $('playBtn').textContent = '▶️';
-
-    if (state.sourceNode) {
-        try { state.sourceNode.stop(); } catch(e) {}
-        state.sourceNode = null;
-    }
-
-    if (state.animationId) {
-        cancelAnimationFrame(state.animationId);
-        state.animationId = null;
-    }
+    if (state.sourceNode) { try { state.sourceNode.stop(); } catch(e){} state.sourceNode = null; }
+    if (state.animationId) { cancelAnimationFrame(state.animationId); state.animationId = null; }
 }
 
 // ===== CANVAS RENDERING =====
 function resizeCanvas() {
     const [w, h] = state.settings.resolution;
-    canvas.width = w;
-    canvas.height = h;
-
-    // Scale preview
-    const container = canvas.parentElement;
-    const maxW = container.clientWidth;
-    const maxH = window.innerHeight * 0.45;
-    const scale = Math.min(maxW / w, maxH / h, 1);
-    canvas.style.width = (w * scale) + 'px';
-    canvas.style.height = (h * scale) + 'px';
+    canvas.width = w; canvas.height = h;
+    const maxW = canvas.parentElement.clientWidth;
+    const maxH = window.innerHeight * 0.42;
+    const s = Math.min(maxW / w, maxH / h, 1);
+    canvas.style.width = (w * s) + 'px';
+    canvas.style.height = (h * s) + 'px';
 }
 
 function renderFrame(time) {
-    const w = canvas.width;
-    const h = canvas.height;
-    const s = state.settings;
-
+    const w = canvas.width, h = canvas.height, s = state.settings;
     ctx.clearRect(0, 0, w, h);
 
-    // ===== BACKGROUND =====
     drawBackground(w, h, time);
+    if (s.showWaveform) drawWaveform(w, h);
+    if (s.showProgress && state.duration > 0) drawProgressBar(w, h, time);
 
-    // ===== WAVEFORM =====
-    if (s.showWaveform) {
-        drawWaveform(w, h);
-    }
+    // Draw text layers (behind captions)
+    drawLayers(w, h, time);
 
-    // ===== PROGRESS BAR =====
-    if (s.showProgress && state.duration > 0) {
-        drawProgressBar(w, h, time);
-    }
-
-    // ===== CAPTIONS =====
+    // Draw captions
     drawCaptions(w, h, time);
 }
 
 function drawBackground(w, h, time) {
     const s = state.settings;
-
     switch (s.bgType) {
         case 'gradient': {
             const angle = s.animateGradient ? (time * 30) % 360 : 135;
-            const rad = (angle * Math.PI) / 180;
-            const x1 = w/2 + Math.cos(rad) * w/2;
-            const y1 = h/2 + Math.sin(rad) * h/2;
-            const x2 = w/2 - Math.cos(rad) * w/2;
-            const y2 = h/2 - Math.sin(rad) * h/2;
-
-            const grad = ctx.createLinearGradient(x1, y1, x2, y2);
-            grad.addColorStop(0, s.gradColor1);
-            grad.addColorStop(1, s.gradColor2);
-            ctx.fillStyle = grad;
+            const rad = angle * Math.PI / 180;
+            const g = ctx.createLinearGradient(
+                w/2 + Math.cos(rad)*w/2, h/2 + Math.sin(rad)*h/2,
+                w/2 - Math.cos(rad)*w/2, h/2 - Math.sin(rad)*h/2
+            );
+            g.addColorStop(0, s.gradColor1);
+            g.addColorStop(1, s.gradColor2);
+            ctx.fillStyle = g;
             ctx.fillRect(0, 0, w, h);
             break;
         }
-        case 'solid': {
+        case 'solid':
             ctx.fillStyle = s.solidColor;
             ctx.fillRect(0, 0, w, h);
             break;
-        }
-        case 'image': {
+        case 'image':
             if (state.bgImageObj) {
                 const img = state.bgImageObj;
-                const scale = Math.max(w / img.width, h / img.height);
-                const iw = img.width * scale;
-                const ih = img.height * scale;
-                ctx.drawImage(img, (w - iw) / 2, (h - ih) / 2, iw, ih);
-                // Dark overlay
-                ctx.fillStyle = 'rgba(0,0,0,0.4)';
+                const sc = Math.max(w/img.width, h/img.height);
+                ctx.drawImage(img, (w-img.width*sc)/2, (h-img.height*sc)/2, img.width*sc, img.height*sc);
+                ctx.fillStyle = 'rgba(0,0,0,0.35)';
                 ctx.fillRect(0, 0, w, h);
-            } else {
-                ctx.fillStyle = '#111';
-                ctx.fillRect(0, 0, w, h);
-            }
+            } else { ctx.fillStyle = '#111'; ctx.fillRect(0, 0, w, h); }
             break;
-        }
-        case 'particles': {
+        case 'video':
+            if (state.bgVideoObj && state.bgVideoObj.readyState >= 2) {
+                const vid = state.bgVideoObj;
+                const sc = Math.max(w/vid.videoWidth, h/vid.videoHeight);
+                ctx.drawImage(vid, (w-vid.videoWidth*sc)/2, (h-vid.videoHeight*sc)/2, vid.videoWidth*sc, vid.videoHeight*sc);
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(0, 0, w, h);
+            } else { ctx.fillStyle = '#111'; ctx.fillRect(0, 0, w, h); }
+            break;
+        case 'particles':
             ctx.fillStyle = '#0a0a1a';
             ctx.fillRect(0, 0, w, h);
-            drawParticles(w, h, time);
+            state.particles.forEach(p => {
+                const x = ((p.x * w + time * 20 * p.speed) % w);
+                const y = ((p.y * h + time * 15 * p.speed) % h);
+                const alpha = 0.2 + (Math.sin(time * 2 + p.phase) + 1) * 0.3;
+                ctx.beginPath();
+                ctx.arc(x, y, p.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(102,126,234,${alpha})`;
+                ctx.fill();
+            });
             break;
-        }
-    }
-}
-
-function drawParticles(w, h, time) {
-    const count = 50;
-    for (let i = 0; i < count; i++) {
-        const seed = i * 137.508;
-        const x = ((seed * 1.1 + time * 20 * (i % 3 + 1)) % w);
-        const y = ((seed * 0.7 + time * 15 * ((i + 1) % 3 + 1)) % h);
-        const size = 2 + (i % 4);
-        const alpha = 0.2 + (Math.sin(time * 2 + i) + 1) * 0.3;
-
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(102, 126, 234, ${alpha})`;
-        ctx.fill();
     }
 }
 
 function drawWaveform(w, h) {
-    if (!state.analyser || !state.isPlaying) {
-        // Draw static waveform
-        drawStaticWaveform(w, h);
-        return;
-    }
-
-    const bufferLength = state.analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    state.analyser.getByteFrequencyData(dataArray);
-
-    const barWidth = w / bufferLength * 2;
-    const centerY = h * 0.75;
-    const maxBarHeight = h * 0.15;
-
-    ctx.save();
-    for (let i = 0; i < bufferLength; i++) {
-        const barHeight = (dataArray[i] / 255) * maxBarHeight;
-        const x = i * barWidth;
-
-        const gradient = ctx.createLinearGradient(0, centerY - barHeight, 0, centerY + barHeight);
-        gradient.addColorStop(0, state.settings.highlightColor);
-        gradient.addColorStop(0.5, state.settings.captionColor);
-        gradient.addColorStop(1, state.settings.highlightColor);
-
-        ctx.fillStyle = gradient;
-        ctx.globalAlpha = 0.6;
-        ctx.fillRect(x, centerY - barHeight / 2, barWidth - 1, barHeight);
-    }
-    ctx.restore();
-}
-
-function drawStaticWaveform(w, h) {
-    const bars = 60;
-    const barWidth = w / bars * 0.6;
-    const centerY = h * 0.75;
-    const maxHeight = h * 0.06;
-
-    ctx.save();
-    ctx.globalAlpha = 0.2;
+    const bars = 60, barW = w/bars*0.6, centerY = h*0.75, maxH = h*0.06;
+    ctx.save(); ctx.globalAlpha = 0.25;
     for (let i = 0; i < bars; i++) {
-        const x = (w / bars) * i + (w / bars) * 0.2;
-        const barH = maxHeight * (0.3 + Math.random() * 0.7);
+        const x = (w/bars)*i + (w/bars)*0.2;
+        const bH = maxH * (0.3 + Math.sin(i * 0.5 + state.currentTime * 3) * 0.35 + 0.35);
         ctx.fillStyle = state.settings.captionColor;
-        ctx.fillRect(x, centerY - barH / 2, barWidth, barH);
+        ctx.fillRect(x, centerY - bH/2, barW, bH);
     }
     ctx.restore();
 }
 
 function drawProgressBar(w, h, time) {
     const progress = state.duration > 0 ? time / state.duration : 0;
-    const barY = h - 20;
-    const barH = 4;
-    const padding = w * 0.05;
-
-    // Background
+    const y = h - 18, barH = 4, pad = w * 0.05;
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.beginPath();
-    ctx.roundRect(padding, barY, w - padding * 2, barH, 2);
-    ctx.fill();
-
-    // Fill
+    roundRect(ctx, pad, y, w - pad*2, barH, 2); ctx.fill();
     ctx.fillStyle = state.settings.progressColor;
-    ctx.beginPath();
-    ctx.roundRect(padding, barY, (w - padding * 2) * progress, barH, 2);
-    ctx.fill();
-
-    // Time labels
+    roundRect(ctx, pad, y, (w - pad*2) * progress, barH, 2); ctx.fill();
     ctx.font = `12px ${state.settings.captionFont}`;
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.textAlign = 'left';
-    ctx.fillText(formatTime(time), padding, barY - 6);
-    ctx.textAlign = 'right';
-    ctx.fillText(formatTime(state.duration), w - padding, barY - 6);
+    ctx.textAlign = 'left'; ctx.fillText(formatTime(time), pad, y - 5);
+    ctx.textAlign = 'right'; ctx.fillText(formatTime(state.duration), w - pad, y - 5);
 }
 
-function drawCaptions(w, h, time) {
-    const s = state.settings;
-    const activeCaption = state.captions.find(c =>
-        time >= c.startTime && time < c.endTime
-    );
-
-    if (!activeCaption) return;
-
-    const elapsed = time - activeCaption.startTime;
-    const captionDuration = activeCaption.endTime - activeCaption.startTime;
-    const progress = Math.min(elapsed / 0.3, 1); // Animation progress (0.3s)
-
-    // Font setup
-    ctx.font = `700 ${s.captionSize}px ${s.captionFont}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    // Position
-    let y;
-    switch (s.captionPosition) {
-        case 'top': y = h * 0.2; break;
-        case 'bottom': y = h * 0.8; break;
-        default: y = h * 0.45; break;
-    }
-
-    // Text Shadow
-    applyShadow(s.textShadow);
-
-    // Animation
-    ctx.save();
-
-    switch (s.captionAnimation) {
-        case 'fadeIn':
-            ctx.globalAlpha = progress;
-            ctx.fillStyle = s.captionColor;
-            wrapText(ctx, activeCaption.text, w / 2, y, w * 0.85, s.captionSize * 1.3);
-            break;
-
-        case 'typewriter': {
-            ctx.globalAlpha = 1;
-            const charCount = Math.floor(activeCaption.text.length * Math.min(elapsed / (captionDuration * 0.6), 1));
-            const displayText = activeCaption.text.substring(0, charCount);
-            ctx.fillStyle = s.captionColor;
-            wrapText(ctx, displayText, w / 2, y, w * 0.85, s.captionSize * 1.3);
-            break;
-        }
-
-        case 'slideUp': {
-            const offsetY = (1 - easeOutCubic(progress)) * 60;
-            ctx.globalAlpha = progress;
-            ctx.fillStyle = s.captionColor;
-            wrapText(ctx, activeCaption.text, w / 2, y + offsetY, w * 0.85, s.captionSize * 1.3);
-            break;
-        }
-
-        case 'scaleIn': {
-            const scale = easeOutBack(progress);
-            ctx.translate(w / 2, y);
-            ctx.scale(scale, scale);
-            ctx.translate(-w / 2, -y);
-            ctx.globalAlpha = progress;
-            ctx.fillStyle = s.captionColor;
-            wrapText(ctx, activeCaption.text, w / 2, y, w * 0.85, s.captionSize * 1.3);
-            break;
-        }
-
-        case 'wordByWord': {
-            const words = activeCaption.text.split(' ');
-            const wordDur = captionDuration / words.length;
-            const activeWordIdx = Math.min(Math.floor(elapsed / wordDur), words.length - 1);
-
-            let fullText = '';
-            words.forEach((word, i) => {
-                fullText += (i > 0 ? ' ' : '') + word;
-            });
-
-            // Draw all words first
-            ctx.fillStyle = s.captionColor;
-            ctx.globalAlpha = 0.4;
-            wrapText(ctx, fullText, w / 2, y, w * 0.85, s.captionSize * 1.3);
-
-            // Highlight active word
-            ctx.globalAlpha = 1;
-            ctx.fillStyle = s.highlightColor;
-            // Simple approach: draw highlighted words up to current
-            const highlightText = words.slice(0, activeWordIdx + 1).join(' ');
-            ctx.fillStyle = s.highlightColor;
-            wrapText(ctx, highlightText, w / 2, y, w * 0.85, s.captionSize * 1.3);
-            break;
-        }
-
-        default:
-            ctx.fillStyle = s.captionColor;
-            wrapText(ctx, activeCaption.text, w / 2, y, w * 0.85, s.captionSize * 1.3);
-    }
-
-    ctx.restore();
-
-    // Reset shadow
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
+// ===== TEXT LAYERS =====
+function setupLayers() {
+    $('addLayerBtn').onclick = () => {
+        state.layers.push({
+            id: Date.now(), text: 'Text Layer',
+            x: 50, y: 10, size: 24,
+            color: '#ffffff', position: 'top-left'
+        });
+        renderLayersList();
+        renderFrame(state.currentTime);
+    };
 }
 
-function applyShadow(type) {
-    switch (type) {
-        case 'soft':
-            ctx.shadowColor = 'rgba(0,0,0,0.7)';
-            ctx.shadowBlur = 15;
-            ctx.shadowOffsetX = 2;
-            ctx.shadowOffsetY = 2;
-            break;
-        case 'hard':
-            ctx.shadowColor = 'rgba(0,0,0,0.9)';
-            ctx.shadowBlur = 0;
-            ctx.shadowOffsetX = 4;
-            ctx.shadowOffsetY = 4;
-            break;
-        case 'outline':
-            ctx.shadowColor = '#000';
-            ctx.shadowBlur = 8;
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 6;
-            break;
-        case 'glow':
-            ctx.shadowColor = state.settings.highlightColor;
-            ctx.shadowBlur = 25;
-            break;
-    }
+function renderLayersList() {
+    $('layersList').innerHTML = state.layers.map(l => `
+        <div class="layer-item">
+            <input type="text" value="${esc(l.text)}" onchange="updateLayer(${l.id},'text',this.value)">
+            <input type="color" value="${l.color}" onchange="updateLayer(${l.id},'color',this.value)">
+            <select onchange="updateLayer(${l.id},'position',this.value)">
+                <option value="top-left" ${l.position==='top-left'?'selected':''}>↖</option>
+                <option value="top-right" ${l.position==='top-right'?'selected':''}>↗</option>
+                <option value="bottom-left" ${l.position==='bottom-left'?'selected':''}>↙</option>
+                <option value="bottom-right" ${l.position==='bottom-right'?'selected':''}>↘</option>
+            </select>
+            <button class="delete-caption" onclick="deleteLayer(${l.id})">🗑️</button>
+        </div>
+    `).join('');
 }
 
-function wrapText(context, text, x, y, maxWidth, lineHeight) {
-    const words = text.split(' ');
-    let line = '';
-    let lines = [];
+function drawLayers(w, h, time) {
+    state.layers.forEach(l => {
+        ctx.save();
+        ctx.font = `600 ${l.size}px ${state.settings.captionFont}`;
+        ctx.fillStyle = l.color;
+        ctx.globalAlpha = 0.8;
 
-    for (let word of words) {
-        const testLine = line + (line ? ' ' : '') + word;
-        const metrics = context.measureText(testLine);
-        if (metrics.width > maxWidth && line) {
-            lines.push(line);
-            line = word;
-        } else {
-            line = testLine;
+        let x, y;
+        const pad = 40;
+        switch (l.position) {
+            case 'top-left': x = pad; y = pad + l.size; ctx.textAlign = 'left'; break;
+            case 'top-right': x = w - pad; y = pad + l.size; ctx.textAlign = 'right'; break;
+            case 'bottom-left': x = pad; y = h - pad - 30; ctx.textAlign = 'left'; break;
+            case 'bottom-right': x = w - pad; y = h - pad - 30; ctx.textAlign = 'right'; break;
         }
-    }
-    lines.push(line);
-
-    const totalHeight = lines.length * lineHeight;
-    const startY = y - totalHeight / 2 + lineHeight / 2;
-
-    for (let i = 0; i < lines.length; i++) {
-        context.fillText(lines[i], x, startY + i * lineHeight);
-    }
+        ctx.fillText(l.text, x, y);
+        ctx.restore();
+    });
 }
 
-// ===== CAPTION EDITOR =====
+window.updateLayer = (id, field, val) => {
+    const l = state.layers.find(x => x.id === id);
+    if (l) { l[field] = val; renderFrame(state.currentTime); }
+};
+window.deleteLayer = id => {
+    state.layers = state.layers.filter(x => x.id !== id);
+    renderLayersList(); renderFrame(state.currentTime);
+};
+
+// ===== CAPTIONS =====
 function setupCaptionEditor() {
-    $('addCaptionBtn').addEventListener('click', addCaption);
-    $('autoGenerateBtn').addEventListener('click', autoSplitCaptions);
-    $('importSrtBtn').addEventListener('click', () => $('srtInput').click());
-    $('srtInput').addEventListener('change', importSRT);
+    $('addCaptionBtn').onclick = addCaption;
+    $('autoGenerateBtn').onclick = autoSplit;
+    $('importSrtBtn').onclick = () => $('srtInput').click();
+    $('srtInput').onchange = importSRT;
 }
 
 function addCaption() {
-    const lastEnd = state.captions.length > 0
-        ? state.captions[state.captions.length - 1].endTime
-        : 0;
-
-    state.captions.push({
-        id: Date.now(),
-        text: 'New caption',
-        startTime: lastEnd,
-        endTime: Math.min(lastEnd + 3, state.duration || 10)
-    });
-
-    renderCaptionList();
-    renderFrame(state.currentTime);
+    const last = state.captions.length ? state.captions[state.captions.length-1].endTime : 0;
+    state.captions.push({ id: Date.now(), text: 'New caption', startTime: last, endTime: Math.min(last+3, state.duration||10) });
+    renderCaptionList(); renderFrame(state.currentTime);
 }
 
-function autoSplitCaptions() {
+function autoSplit() {
     const script = $('scriptInput')?.value?.trim();
-    if (!script) {
-        alert('Please paste your script in the text area first.');
-        return;
-    }
-
-    // Split into sentences
+    if (!script) return alert('Paste your script first!');
     const sentences = script.match(/[^.!?]+[.!?]*/g) || [script];
-    const totalDuration = state.duration || sentences.length * 3;
-    const durationPerCaption = totalDuration / sentences.length;
-
-    state.captions = sentences.map((text, i) => ({
-        id: Date.now() + i,
-        text: text.trim(),
-        startTime: parseFloat((i * durationPerCaption).toFixed(2)),
-        endTime: parseFloat(((i + 1) * durationPerCaption).toFixed(2))
+    const dur = state.duration || sentences.length * 3;
+    const per = dur / sentences.length;
+    state.captions = sentences.map((t, i) => ({
+        id: Date.now()+i, text: t.trim(),
+        startTime: +(i*per).toFixed(2), endTime: +((i+1)*per).toFixed(2)
     }));
-
-    renderCaptionList();
-    renderFrame(state.currentTime);
+    renderCaptionList(); renderFrame(state.currentTime);
 }
 
 function importSRT(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = event => {
-        const content = event.target.result;
-        state.captions = parseSRT(content);
-        renderCaptionList();
-        renderFrame(state.currentTime);
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+        state.captions = parseSRT(ev.target.result);
+        renderCaptionList(); renderFrame(state.currentTime);
     };
-    reader.readAsText(file);
+    r.readAsText(f);
 }
 
 function parseSRT(text) {
-    const blocks = text.trim().split(/\n\s*\n/);
-    return blocks.map((block, i) => {
-        const lines = block.split('\n');
-        const timeLine = lines.find(l => l.includes('-->'));
-        if (!timeLine) return null;
-
-        const [start, end] = timeLine.split('-->').map(t => {
-            const parts = t.trim().replace(',', '.').split(':');
-            return parseFloat(parts[0]) * 3600 +
-                   parseFloat(parts[1]) * 60 +
-                   parseFloat(parts[2]);
+    return text.trim().split(/\n\s*\n/).map((b, i) => {
+        const lines = b.split('\n');
+        const tl = lines.find(l => l.includes('-->'));
+        if (!tl) return null;
+        const [s, e] = tl.split('-->').map(t => {
+            const p = t.trim().replace(',','.').split(':');
+            return +p[0]*3600 + +p[1]*60 + +p[2];
         });
-
-        const textLines = lines.filter(l => l !== lines[0] && l !== timeLine);
-
-        return {
-            id: Date.now() + i,
-            text: textLines.join(' ').replace(/<[^>]+>/g, '').trim(),
-            startTime: start,
-            endTime: end
-        };
+        return { id: Date.now()+i, text: lines.filter(l => l!==lines[0] && l!==tl).join(' ').replace(/<[^>]+>/g,'').trim(), startTime: s, endTime: e };
     }).filter(Boolean);
 }
 
 function renderCaptionList() {
     const list = $('captionList');
-
-    if (state.captions.length === 0) {
-        list.innerHTML = `
-            <div class="caption-empty">
-                <p>No captions yet. Add manually or paste your script below:</p>
-                <textarea id="scriptInput" placeholder="Paste your full script here and click 'Auto Split' to generate timed captions..."></textarea>
-            </div>`;
+    if (!state.captions.length) {
+        list.innerHTML = `<div class="caption-empty"><p>No captions yet.</p><textarea id="scriptInput" placeholder="Paste script here..."></textarea></div>`;
         return;
     }
-
-    list.innerHTML = state.captions.map((cap, i) => `
-        <div class="caption-item" data-id="${cap.id}">
-            <span style="color:var(--text-secondary);font-size:0.7rem;min-width:20px">${i + 1}</span>
+    list.innerHTML = state.captions.map((c, i) => `
+        <div class="caption-item">
+            <span style="color:var(--text-secondary);font-size:0.65rem;min-width:18px">${i+1}</span>
             <div class="caption-times">
-                <div>
-                    <span class="time-label">Start</span>
-                    <input type="number" step="0.1" min="0" value="${cap.startTime.toFixed(1)}"
-                        onchange="updateCaption(${cap.id}, 'startTime', parseFloat(this.value))">
-                </div>
-                <div>
-                    <span class="time-label">End</span>
-                    <input type="number" step="0.1" min="0" value="${cap.endTime.toFixed(1)}"
-                        onchange="updateCaption(${cap.id}, 'endTime', parseFloat(this.value))">
-                </div>
+                <div><span class="time-label">Start</span><input type="number" step="0.1" min="0" value="${c.startTime.toFixed(1)}" onchange="updateCap(${c.id},'startTime',+this.value)"></div>
+                <div><span class="time-label">End</span><input type="number" step="0.1" min="0" value="${c.endTime.toFixed(1)}" onchange="updateCap(${c.id},'endTime',+this.value)"></div>
             </div>
-            <input type="text" class="caption-text-input" value="${escapeHtml(cap.text)}"
-                onchange="updateCaption(${cap.id}, 'text', this.value)"
-                onfocus="seekToCaption(${cap.id})">
-            <button class="delete-caption" onclick="deleteCaption(${cap.id})">🗑️</button>
+            <input type="text" class="caption-text-input" value="${esc(c.text)}" onchange="updateCap(${c.id},'text',this.value)">
+            <button class="delete-caption" onclick="deleteCap(${c.id})">🗑️</button>
         </div>
     `).join('');
 }
 
-function updateCaption(id, field, value) {
-    const cap = state.captions.find(c => c.id === id);
-    if (cap) {
-        cap[field] = value;
-        renderFrame(state.currentTime);
+window.updateCap = (id, f, v) => { const c = state.captions.find(x=>x.id===id); if(c){c[f]=v; renderFrame(state.currentTime);} };
+window.deleteCap = id => { state.captions = state.captions.filter(x=>x.id!==id); renderCaptionList(); renderFrame(state.currentTime); };
+
+function drawCaptions(w, h, time) {
+    const s = state.settings;
+    const cap = state.captions.find(c => time >= c.startTime && time < c.endTime);
+    if (!cap) return;
+
+    const elapsed = time - cap.startTime;
+    const dur = cap.endTime - cap.startTime;
+    const prog = Math.min(elapsed / 0.3, 1);
+
+    const fontStr = `700 ${s.captionSize}px ${s.captionFont}`;
+    ctx.font = fontStr;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    let y;
+    switch (s.captionPosition) {
+        case 'top': y = h*0.2; break;
+        case 'bottom': y = h*0.8; break;
+        default: y = h*0.45;
+    }
+
+    applyShadow(s.textShadow);
+    ctx.save();
+
+    switch (s.captionAnimation) {
+        case 'fadeIn':
+            ctx.globalAlpha = prog;
+            ctx.fillStyle = s.captionColor;
+            wrapText(ctx, cap.text, w/2, y, w*0.85, s.captionSize*1.3);
+            break;
+        case 'typewriter': {
+            const chars = Math.floor(cap.text.length * Math.min(elapsed/(dur*0.6), 1));
+            ctx.fillStyle = s.captionColor;
+            wrapText(ctx, cap.text.substring(0, chars), w/2, y, w*0.85, s.captionSize*1.3);
+            break;
+        }
+        case 'slideUp':
+            ctx.globalAlpha = prog;
+            ctx.fillStyle = s.captionColor;
+            wrapText(ctx, cap.text, w/2, y + (1-easeOutCubic(prog))*60, w*0.85, s.captionSize*1.3);
+            break;
+        case 'scaleIn': {
+            const sc = easeOutBack(prog);
+            ctx.translate(w/2, y); ctx.scale(sc, sc); ctx.translate(-w/2, -y);
+            ctx.globalAlpha = prog; ctx.fillStyle = s.captionColor;
+            wrapText(ctx, cap.text, w/2, y, w*0.85, s.captionSize*1.3);
+            break;
+        }
+        case 'wordByWord': {
+            const words = cap.text.split(' ');
+            const wDur = dur / words.length;
+            const idx = Math.min(Math.floor(elapsed / wDur), words.length - 1);
+            ctx.globalAlpha = 0.35; ctx.fillStyle = s.captionColor;
+            wrapText(ctx, cap.text, w/2, y, w*0.85, s.captionSize*1.3);
+            ctx.globalAlpha = 1; ctx.fillStyle = s.highlightColor;
+            wrapText(ctx, words.slice(0, idx+1).join(' '), w/2, y, w*0.85, s.captionSize*1.3);
+            break;
+        }
+        default:
+            ctx.fillStyle = s.captionColor;
+            wrapText(ctx, cap.text, w/2, y, w*0.85, s.captionSize*1.3);
+    }
+    ctx.restore();
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+}
+
+function applyShadow(type) {
+    const s = state.settings;
+    switch (type) {
+        case 'soft': ctx.shadowColor='rgba(0,0,0,0.7)'; ctx.shadowBlur=15; ctx.shadowOffsetX=2; ctx.shadowOffsetY=2; break;
+        case 'hard': ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=0; ctx.shadowOffsetX=4; ctx.shadowOffsetY=4; break;
+        case 'outline': ctx.shadowColor='#000'; ctx.shadowBlur=8; break;
+        case 'glow': ctx.shadowColor=s.highlightColor; ctx.shadowBlur=25; break;
     }
 }
 
-function deleteCaption(id) {
-    state.captions = state.captions.filter(c => c.id !== id);
-    renderCaptionList();
-    renderFrame(state.currentTime);
-}
-
-function seekToCaption(id) {
-    const cap = state.captions.find(c => c.id === id);
-    if (cap) {
-        state.currentTime = cap.startTime;
-        $('scrubber').value = cap.startTime;
-        $('currentTime').textContent = formatTime(cap.startTime);
-        renderFrame(cap.startTime);
+function wrapText(c, text, x, y, maxW, lh) {
+    const words = text.split(' ');
+    let line = '', lines = [];
+    for (const w of words) {
+        const test = line + (line ? ' ' : '') + w;
+        if (c.measureText(test).width > maxW && line) { lines.push(line); line = w; }
+        else line = test;
     }
+    lines.push(line);
+    const startY = y - (lines.length * lh)/2 + lh/2;
+    lines.forEach((l, i) => c.fillText(l, x, startY + i * lh));
 }
 
-// ===== EXPORT VIDEO =====
-function setupExport() {
-    $('exportBtn').addEventListener('click', exportVideo);
-}
+// ===== EXPORT =====
+function setupExport() { $('exportBtn').onclick = exportVideo; }
 
 async function exportVideo() {
-    if (!state.audioBuffer) {
-        alert('Please upload an audio file first.');
-        return;
-    }
+    if (!state.audioBuffer) return alert('Upload audio first!');
 
+    const format = $('exportFormat').value;
     $('exportBtn').disabled = true;
     $('exportProgress').classList.remove('hidden');
 
     try {
-        const fps = state.settings.fps;
-        const totalFrames = Math.ceil(state.duration * fps);
-        const [w, h] = state.settings.resolution;
-
-        // Create offscreen canvas
-        const offCanvas = new OffscreenCanvas(w, h);
-        const offCtx = offCanvas.getContext('2d');
-
-        // Setup MediaRecorder with canvas stream
-        // We use the visible canvas for recording
-        canvas.width = w;
-        canvas.height = h;
-
-        const stream = canvas.captureStream(fps);
-
-        // Add audio track
-        const audioCtx = new AudioContext();
-        const source = audioCtx.createBufferSource();
-        source.buffer = state.audioBuffer;
-
-        const dest = audioCtx.createMediaStreamDestination();
-        source.connect(dest);
-        source.connect(audioCtx.destination);
-
-        // Combine video and audio streams
-        const audioTrack = dest.stream.getAudioTracks()[0];
-        stream.addTrack(audioTrack);
-
-        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-            ? 'video/webm;codecs=vp9,opus'
-            : 'video/webm';
-
-        const recorder = new MediaRecorder(stream, {
-            mimeType,
-            videoBitsPerSecond: 5000000
-        });
-
-        const chunks = [];
-        recorder.ondataavailable = e => {
-            if (e.data.size > 0) chunks.push(e.data);
-        };
-
-        recorder.onstop = () => {
-            const blob = new Blob(chunks, { type: mimeType });
-            const url = URL.createObjectURL(blob);
-
-            // Download
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'video_output.webm';
-            a.click();
-
-            $('exportBtn').disabled = false;
-            $('progressText').textContent = 'Done! Video downloaded.';
-            $('progressFill').style.width = '100%';
-
-            // Restore preview size
-            resizeCanvas();
-
-            setTimeout(() => {
-                $('exportProgress').classList.add('hidden');
-            }, 3000);
-        };
-
-        // Start recording
-        recorder.start();
-        source.start(0);
-
-        // Render frames in real-time
-        const startTime = performance.now();
-
-        function renderExportFrame() {
-            const elapsed = (performance.now() - startTime) / 1000;
-
-            if (elapsed >= state.duration) {
-                recorder.stop();
-                source.stop();
-                return;
-            }
-
-            // Update progress
-            const percent = Math.round((elapsed / state.duration) * 100);
-            $('progressFill').style.width = percent + '%';
-            $('progressText').textContent = `Rendering... ${percent}% (${formatTime(elapsed)} / ${formatTime(state.duration)})`;
-
-            // Render the frame
-            renderFrame(elapsed);
-
-            requestAnimationFrame(renderExportFrame);
+        if (format === 'mp4') {
+            await exportMP4();
+        } else {
+            await exportWebM();
         }
-
-        renderExportFrame();
-
-    } catch (error) {
-        console.error('Export error:', error);
-        alert('Export failed: ' + error.message);
+    } catch (err) {
+        console.error(err);
+        alert('Export failed: ' + err.message);
         $('exportBtn').disabled = false;
         $('exportProgress').classList.add('hidden');
     }
 }
 
-// ===== UTILITY FUNCTIONS =====
-function formatTime(seconds) {
-    if (!seconds || isNaN(seconds)) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
+async function exportWebM() {
+    const fps = state.settings.fps;
+    const [w, h] = state.settings.resolution;
+    canvas.width = w; canvas.height = h;
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML.replace(/"/g, '&quot;');
-}
+    const stream = canvas.captureStream(fps);
 
-function easeOutCubic(t) {
-    return 1 - Math.pow(1 - t, 3);
-}
+    const audioCtx = new AudioContext();
+    const source = audioCtx.createBufferSource();
+    source.buffer = state.audioBuffer;
+    const dest = audioCtx.createMediaStreamDestination();
+    source.connect(dest); source.connect(audioCtx.destination);
+    stream.addTrack(dest.stream.getAudioTracks()[0]);
 
-function easeOutBack(t) {
-    const c1 = 1.70158;
-    const c3 = c1 + 1;
-    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-}
-
-// Add roundRect polyfill if needed
-if (!CanvasRenderingContext2D.prototype.roundRect) {
-    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
-        if (w < 2 * r) r = w / 2;
-        if (h < 2 * r) r = h / 2;
-        this.moveTo(x + r, y);
-        this.arcTo(x + w, y, x + w, y + h, r);
-        this.arcTo(x + w, y + h, x, y + h, r);
-        this.arcTo(x, y + h, x, y, r);
-        this.arcTo(x, y, x + w, y, r);
-        this.closePath();
-        return this;
+    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+        ? 'video/webm;codecs=vp9,opus' : 'video/webm';
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5000000 });
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    rec.onstop = () => {
+        const blob = new Blob(chunks, { type: mime });
+        downloadBlob(blob, 'video.webm');
+        finishExport();
     };
+
+    rec.start(); source.start(0);
+    const t0 = performance.now();
+
+    (function render() {
+        const el = (performance.now() - t0) / 1000;
+        if (el >= state.duration) { rec.stop(); source.stop(); return; }
+        updateProgress(el);
+        renderFrame(el);
+        requestAnimationFrame(render);
+    })();
 }
 
-// Make functions global for inline handlers
-window.updateCaption = updateCaption;
-window.deleteCaption = deleteCaption;
-window.seekToCaption = seekToCaption;
+async function exportMP4() {
+    const { FFmpeg } = FFmpegWASM;
+    const { fetchFile } = FFmpegUtil;
 
-// ===== START =====
+    const ffmpeg = new FFmpeg();
+    const [w, h] = state.settings.resolution;
+    const fps = state.settings.fps;
+    const totalFrames = Math.ceil(state.duration * fps);
+
+    // Load FFmpeg
+    $('progressText').textContent = 'Loading FFmpeg.wasm...';
+    await ffmpeg.load({
+        coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+        wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
+    });
+
+    // Write audio
+    $('progressText').textContent = 'Preparing audio...';
+    const audioData = await fetchFile(state.audio);
+    await ffmpeg.writeFile('audio.mp3', audioData);
+
+    // Render frames
+    canvas.width = w; canvas.height = h;
+    for (let i = 0; i < totalFrames; i++) {
+        const time = i / fps;
+        renderFrame(time);
+
+        // Capture frame as PNG
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        const data = new Uint8Array(await blob.arrayBuffer());
+        const frameName = `frame_${String(i).padStart(5, '0')}.png`;
+        await ffmpeg.writeFile(frameName, data);
+
+        if (i % 10 === 0) {
+            const pct = Math.round((i / totalFrames) * 80);
+            $('progressFill').style.width = pct + '%';
+            $('progressText').textContent = `Rendering frames... ${pct}% (${i}/${totalFrames})`;
+            await new Promise(r => setTimeout(r, 0)); // yield
+        }
+    }
+
+    // Encode with FFmpeg
+    $('progressText').textContent = 'Encoding MP4...';
+    $('progressFill').style.width = '85%';
+
+    await ffmpeg.exec([
+        '-framerate', String(fps),
+        '-i', 'frame_%05d.png',
+        '-i', 'audio.mp3',
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-shortest',
+        '-y',
+        'output.mp4'
+    ]);
+
+    const output = await ffmpeg.readFile('output.mp4');
+    const blob = new Blob([output.buffer], { type: 'video/mp4' });
+    downloadBlob(blob, 'video.mp4');
+
+    // Cleanup
+    for (let i = 0; i < totalFrames; i++) {
+        try { await ffmpeg.deleteFile(`frame_${String(i).padStart(5, '0')}.png`); } catch(e){}
+    }
+    await ffmpeg.deleteFile('audio.mp3');
+    await ffmpeg.deleteFile('output.mp4');
+
+    finishExport();
+}
+
+function updateProgress(elapsed) {
+    const pct = Math.round((elapsed / state.duration) * 100);
+    $('progressFill').style.width = pct + '%';
+    $('progressText').textContent = `Rendering... ${pct}% (${formatTime(elapsed)} / ${formatTime(state.duration)})`;
+}
+
+function finishExport() {
+    $('exportBtn').disabled = false;
+    $('progressText').textContent = '✅ Done! Video downloaded.';
+    $('progressFill').style.width = '100%';
+    resizeCanvas();
+    setTimeout(() => $('exportProgress').classList.add('hidden'), 3000);
+}
+
+function downloadBlob(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+}
+
+// ===== UTILS =====
+function formatTime(s) {
+    if (!s || isNaN(s)) return '0:00';
+    return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+}
+function esc(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML.replace(/"/g,'&quot;'); }
+function easeOutCubic(t) { return 1 - Math.pow(1-t, 3); }
+function easeOutBack(t) { const c = 1.70158; return 1 + (c+1)*Math.pow(t-1,3) + c*Math.pow(t-1,2); }
+
+function roundRect(c, x, y, w, h, r) {
+    if (w < 0) return;
+    c.beginPath();
+    c.moveTo(x+r, y);
+    c.arcTo(x+w, y, x+w, y+h, r);
+    c.arcTo(x+w, y+h, x, y+h, r);
+    c.arcTo(x, y+h, x, y, r);
+    c.arcTo(x, y, x+w, y, r);
+    c.closePath();
+}
+
 document.addEventListener('DOMContentLoaded', init);
 window.addEventListener('resize', resizeCanvas);
