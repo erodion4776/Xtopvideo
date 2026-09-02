@@ -3,127 +3,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HTML to Video Creator - With Scenes</title>
+    <title>HTML Video Creator</title>
     <link rel="stylesheet" href="style.css">
-    <!-- html2canvas for reliable rendering -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <!-- FFmpeg -->
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.min.js"></script>
-    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/util.min.js"></script>
 </head>
 <body>
     <div class="app">
-        <!-- ===== SIDEBAR ===== -->
+        <!-- ===== LEFT SIDEBAR ===== -->
         <aside class="sidebar">
             <header class="app-header">
                 <h1>🎬 Video Creator</h1>
-                <p>HTML + Audio + Scenes → Video</p>
+                <p>Upload images + audio → Write HTML → Export video</p>
             </header>
-
-            <section class="card">
-                <label>📝 Project Name</label>
-                <input type="text" id="projectName" value="my-video">
-            </section>
 
             <!-- Audio -->
             <section class="card">
-                <h3>🎵 1. Audio</h3>
-                <div class="drop-zone" id="dropZone">
-                    <span id="dropZoneText">📁 Upload MP3/WAV</span>
+                <h3>🎵 1. Audio Track</h3>
+                <div class="drop-zone" id="audioDropZone">
+                    <span id="audioDropText">📁 Upload MP3 / WAV</span>
                 </div>
                 <input type="file" id="audioInput" accept="audio/*" hidden>
                 <div id="audioMeta" class="meta hidden"></div>
             </section>
 
-            <!-- Video Size -->
+            <!-- Bulk Image Upload -->
             <section class="card">
-                <h3>📐 2. Video Size</h3>
+                <h3>🖼️ 2. Upload Scene Images (Bulk)</h3>
+                <p class="hint">Select multiple images. They become scene1, scene2, scene3... in your HTML.</p>
+                <div class="drop-zone" id="imageDropZone">
+                    <span id="imageDropText">📁 Upload Multiple Images</span>
+                </div>
+                <input type="file" id="imageInput" accept="image/*" multiple hidden>
+                <div id="imageList" class="image-list"></div>
+            </section>
+
+            <!-- Video Settings -->
+            <section class="card">
+                <h3>📐 3. Video Size</h3>
                 <select id="aspectRatio">
                     <option value="1280x720" selected>🖥️ 1280×720 (HD)</option>
                     <option value="1920x1080">🖥️ 1920×1080 (Full HD)</option>
                     <option value="1080x1920">📱 1080×1920 (Vertical)</option>
                     <option value="1080x1080">🟦 1080×1080 (Square)</option>
                 </select>
-                <label style="margin-top:8px;">FPS</label>
-                <select id="fps">
-                    <option value="24">24</option>
-                    <option value="30" selected>30</option>
-                </select>
-            </section>
-
-            <!-- SCENES MANAGER -->
-            <section class="card">
-                <h3>🎞️ 3. Scenes (Backgrounds)</h3>
-                <p class="hint">Add multiple scenes with different backgrounds. Each scene plays for its time range.</p>
-                
-                <button id="addSceneBtn" class="btn btn-primary" style="width:100%;margin-bottom:8px;">
-                    ➕ Add New Scene
-                </button>
-
-                <div id="scenesList" class="scenes-list"></div>
-            </section>
-
-            <!-- Templates -->
-            <section class="card">
-                <h3>💡 4. HTML Template</h3>
-                <select id="exampleTemplate">
-                    <option value="">-- Choose --</option>
-                    <option value="memorial">🕊️ Memorial Tribute</option>
-                    <option value="karaoke">🎤 Karaoke</option>
-                    <option value="quote">💬 Quote</option>
-                </select>
-                <button id="loadExampleBtn" class="btn btn-secondary" style="margin-top:6px;width:100%;">Load</button>
             </section>
 
             <!-- Projects -->
             <section class="card">
-                <h3>💾 5. Projects</h3>
-                <div class="btn-row">
-                    <button id="saveBtn" class="btn btn-secondary">💾 Save</button>
-                    <button id="newBtn" class="btn btn-secondary">➕ New</button>
-                    <button id="showProjectsBtn" class="btn btn-secondary">📂 Load</button>
+                <h3>💾 4. Projects</h3>
+                <input type="text" id="projectName" value="my-video" placeholder="Project name">
+                <div class="btn-row" style="margin-top:8px;">
+                    <button id="saveBtn" class="btn btn-sm">💾 Save</button>
+                    <button id="loadBtn" class="btn btn-sm">📂 Load</button>
+                    <button id="newBtn" class="btn btn-sm">➕ New</button>
                 </div>
                 <div id="projectsList" class="projects-list hidden"></div>
             </section>
 
+            <!-- Templates -->
+            <section class="card">
+                <h3>💡 5. Example Templates</h3>
+                <select id="templateSelect">
+                    <option value="">-- Choose --</option>
+                    <option value="memorial">🕊️ Memorial Tribute</option>
+                    <option value="slideshow">🖼️ Photo Slideshow</option>
+                    <option value="lyrics">🎤 Lyrics Video</option>
+                    <option value="story">📖 Story / Narration</option>
+                </select>
+                <button id="loadTemplateBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Load Template</button>
+            </section>
+
             <!-- Export -->
             <section class="card">
-                <h3>🎬 6. Export Video</h3>
-                <select id="exportFormat">
-                    <option value="webm" selected>WebM (Recommended)</option>
-                    <option value="mp4">MP4 (Slower)</option>
-                </select>
-                <button id="exportBtn" class="btn btn-export" disabled>🎬 Export & Download</button>
+                <h3>🎬 6. Export</h3>
+                <button id="exportBtn" class="btn btn-export" disabled>🎬 Export & Download Video</button>
+                <p class="hint" style="margin-top:6px;">Exports as WebM video file with audio</p>
             </section>
         </aside>
 
-        <!-- ===== CENTER: EDITOR ===== -->
+        <!-- ===== CENTER: HTML EDITOR ===== -->
         <main class="editor-area">
             <div class="editor-header">
-                <h3>✏️ HTML Design Code</h3>
+                <h3>✏️ Your HTML Design</h3>
                 <div class="editor-tools">
-                    <button id="clearBtn" class="btn btn-secondary">🗑️ Clear</button>
+                    <button id="clearEditorBtn" class="btn btn-sm">🗑️ Clear</button>
                     <button id="applyBtn" class="btn btn-primary">▶ Apply & Preview</button>
                 </div>
             </div>
-            <textarea id="htmlEditor" spellcheck="false" placeholder="Paste your HTML design here..."></textarea>
+            <div class="editor-help">
+                <strong>Available variables in your HTML:</strong>
+                <code>window.__images</code> = array of image URLs (scene1, scene2...)
+                <code>window.__updateAtTime(seconds)</code> = called every frame
+                <code>window.__totalDuration</code> = audio length in seconds
+            </div>
+            <textarea id="htmlEditor" spellcheck="false"></textarea>
         </main>
 
         <!-- ===== RIGHT: PREVIEW ===== -->
         <section class="preview-area">
             <div class="preview-header">
                 <h3>👀 Preview</h3>
-                <span id="previewStatus" class="status">Waiting...</span>
+                <span id="statusBadge" class="badge">Waiting</span>
             </div>
 
-            <!-- LIVE STAGE (this is what gets recorded) -->
             <div class="stage-wrap">
-                <div id="videoStage" class="video-stage">
-                    <!-- Scene backgrounds render here -->
-                    <div id="sceneLayer" class="scene-layer"></div>
-                    <!-- HTML content renders here -->
-                    <div id="htmlLayer" class="html-layer"></div>
-                </div>
+                <div id="videoStage" class="video-stage"></div>
             </div>
 
             <div class="player">
@@ -137,84 +121,18 @@
 
         <!-- Export Modal -->
         <div id="exportModal" class="modal hidden">
-            <div class="modal-content">
-                <h3 id="exportTitle">Exporting...</h3>
-                <div class="progress-outer">
-                    <div id="exportProgress" class="progress-inner"></div>
+            <div class="modal-box">
+                <h3 id="exportTitle">Exporting Video...</h3>
+                <div class="prog-outer">
+                    <div id="progBar" class="prog-inner"></div>
                 </div>
-                <p id="exportDetail">Preparing...</p>
-                <button id="cancelExportBtn" class="btn btn-secondary" style="margin-top:14px;">Cancel</button>
-            </div>
-        </div>
-
-        <!-- Scene Editor Modal -->
-        <div id="sceneModal" class="modal hidden">
-            <div class="modal-content" style="width:500px;text-align:left;">
-                <h3>🎞️ Edit Scene</h3>
-                <div style="margin-top:12px;">
-                    <label>Scene Name</label>
-                    <input type="text" id="sceneName" placeholder="Scene 1">
-                    
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
-                        <div>
-                            <label>Start Time (sec)</label>
-                            <input type="number" id="sceneStart" step="0.1" min="0" value="0">
-                        </div>
-                        <div>
-                            <label>End Time (sec)</label>
-                            <input type="number" id="sceneEnd" step="0.1" min="0" value="10">
-                        </div>
-                    </div>
-
-                    <label style="margin-top:8px;">Background Type</label>
-                    <select id="sceneBgType">
-                        <option value="gradient">Gradient</option>
-                        <option value="solid">Solid Color</option>
-                        <option value="image">Upload Image</option>
-                    </select>
-
-                    <div id="sceneGradient" style="margin-top:8px;">
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                            <div>
-                                <label>Color 1</label>
-                                <input type="color" id="sceneColor1" value="#667eea">
-                            </div>
-                            <div>
-                                <label>Color 2</label>
-                                <input type="color" id="sceneColor2" value="#764ba2">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="sceneSolid" class="hidden" style="margin-top:8px;">
-                        <label>Color</label>
-                        <input type="color" id="sceneSolidColor" value="#1a1a2e">
-                    </div>
-
-                    <div id="sceneImage" class="hidden" style="margin-top:8px;">
-                        <label>Upload Image</label>
-                        <input type="file" id="sceneImageInput" accept="image/*">
-                        <div id="sceneImagePreview" style="margin-top:8px;"></div>
-                    </div>
-
-                    <label style="margin-top:8px;">Effect</label>
-                    <select id="sceneEffect">
-                        <option value="none">None</option>
-                        <option value="fadeIn">Fade In</option>
-                        <option value="zoom">Zoom (Ken Burns)</option>
-                        <option value="pan">Pan</option>
-                    </select>
-                </div>
-
-                <div style="display:flex;gap:8px;margin-top:16px;">
-                    <button id="saveSceneBtn" class="btn btn-primary" style="flex:1;">💾 Save Scene</button>
-                    <button id="cancelSceneBtn" class="btn btn-secondary">Cancel</button>
-                </div>
+                <p id="progText">Starting...</p>
+                <button id="cancelBtn" class="btn btn-sm" style="margin-top:12px;">Cancel</button>
             </div>
         </div>
     </div>
 
-    <script src="examples.js"></script>
+    <script src="templates.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
