@@ -1,24 +1,19 @@
-// ============================================
-// STATE
-// ============================================
 const state = {
     audio: null,
     audioBuffer: null,
     audioCtx: null,
     sourceNode: null,
-    duration: 30,
+    duration: 60,
     currentTime: 0,
     isPlaying: false,
     width: 1280,
     height: 720,
-    fps: 30,
+    images: [],         // Array of { id, name, dataUrl }
+    imageUrls: [],      // Array of blob URLs passed to HTML
     animFrameId: null,
     startTimestamp: 0,
-    exportCancelled: false,
     htmlApplied: false,
-    scenes: [],
-    editingSceneId: null,
-    currentSceneImage: null
+    exportCancelled: false
 };
 
 const $ = id => document.getElementById(id);
@@ -27,349 +22,277 @@ const $ = id => document.getElementById(id);
 // INIT
 // ============================================
 window.addEventListener('DOMContentLoaded', () => {
-    setupAudioUpload();
-    setupHTMLEditor();
-    setupExamples();
-    setupProjects();
+    setupAudio();
+    setupImageUpload();
+    setupEditor();
     setupPlayer();
     setupExport();
-    setupScenes();
-    updateAspectRatio();
-    scalePreview();
-    renderScenesList();
-    window.addEventListener('resize', scalePreview);
+    setupProjects();
+    setupTemplates();
+    updateSize();
+    scaleStage();
+    window.addEventListener('resize', scaleStage);
 });
+
+// ============================================
+// AUDIO
+// ============================================
+function setupAudio() {
+    const dz = $('audioDropZone');
+    const inp = $('audioInput');
+    dz.onclick = e => { e.preventDefault(); inp.click(); };
+    dz.ondragover = e => { e.preventDefault(); dz.classList.add('drag'); };
+    dz.ondragleave = () => dz.classList.remove('drag');
+    dz.ondrop = e => { e.preventDefault(); dz.classList.remove('drag'); if(e.dataTransfer.files[0]) loadAudio(e.dataTransfer.files[0]); };
+    inp.onchange = e => { if(e.target.files[0]) loadAudio(e.target.files[0]); };
+}
+
+async function loadAudio(file) {
+    $('audioDropText').textContent = '⏳ Loading...';
+    try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!state.audioCtx) state.audioCtx = new AC();
+        if (state.audioCtx.state === 'suspended') await state.audioCtx.resume();
+        state.audio = file;
+        const buf = await file.arrayBuffer();
+        state.audioBuffer = await new Promise((res, rej) => { state.audioCtx.decodeAudioData(buf.slice(0), res, rej); });
+        state.duration = state.audioBuffer.duration;
+        $('audioMeta').innerHTML = `🎵 <b>${file.name}</b> | ${fmt(state.duration)}`;
+        $('audioMeta').classList.remove('hidden');
+        $('audioDropText').innerHTML = `✅ <b>${file.name}</b>`;
+        $('scrubber').max = state.duration;
+        $('playBtn').disabled = false;
+        checkReady();
+        update(0);
+    } catch(e) {
+        alert('Audio error: ' + e.message);
+        $('audioDropText').textContent = '❌ Click to retry';
+    } finally { $('audioInput').value = ''; }
+}
+
+// ============================================
+// BULK IMAGE UPLOAD
+// ============================================
+function setupImageUpload() {
+    const dz = $('imageDropZone');
+    const inp = $('imageInput');
+    dz.onclick = e => { e.preventDefault(); inp.click(); };
+    dz.ondragover = e => { e.preventDefault(); dz.classList.add('drag'); };
+    dz.ondragleave = () => dz.classList.remove('drag');
+    dz.ondrop = e => { e.preventDefault(); dz.classList.remove('drag'); handleImages(e.dataTransfer.files); };
+    inp.onchange = e => { handleImages(e.target.files); };
+}
+
+function handleImages(files) {
+    if (!files || files.length === 0) return;
+    
+    const fileArray = Array.from(files).filter(f => f.type.startsWith('image/'));
+    
+    // Sort by name for consistent ordering
+    fileArray.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    
+    let loaded = 0;
+    $('imageDropText').textContent = `⏳ Loading ${fileArray.length} images...`;
+    
+    fileArray.forEach((file, idx) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            state.images.push({
+                id: Date.now() + idx,
+                name: file.name,
+                dataUrl: reader.result
+            });
+            loaded++;
+            if (loaded === fileArray.length) {
+                rebuildImageUrls();
+                renderImageList();
+                $('imageDropText').textContent = `✅ ${state.images.length} images loaded`;
+                if (state.htmlApplied) applyHTML();
+            }
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+function rebuildImageUrls() {
+    state.imageUrls = state.images.map(img => img.dataUrl);
+    window.__images = state.imageUrls;
+}
+
+function renderImageList() {
+    const list = $('imageList');
+    if (state.images.length === 0) {
+        list.innerHTML = '';
+        return;
+    }
+    
+    list.innerHTML = state.images.map((img, i) => `
+        <div class="img-thumb" draggable="true" 
+             ondragstart="window._dragStart(event, ${i})"
+             ondragover="window._dragOver(event, ${i})"
+             ondrop="window._dragDrop(event, ${i})"
+             ondragend="window._dragEnd(event)">
+            <img src="${img.dataUrl}" alt="${img.name}">
+            <div class="label">scene${i}</div>
+            <button class="remove-img" onclick="window._removeImg(${i})">✕</button>
+        </div>
+    `).join('');
+}
+
+// Drag & Drop reordering
+let dragIdx = null;
+
+window._dragStart = (e, i) => {
+    dragIdx = i;
+    e.target.closest('.img-thumb').classList.add('dragging');
+};
+
+window._dragOver = (e, i) => {
+    e.preventDefault();
+    document.querySelectorAll('.img-thumb').forEach(el => el.classList.remove('dragover'));
+    e.target.closest('.img-thumb')?.classList.add('dragover');
+};
+
+window._dragDrop = (e, i) => {
+    e.preventDefault();
+    if (dragIdx === null || dragIdx === i) return;
+    const moved = state.images.splice(dragIdx, 1)[0];
+    state.images.splice(i, 0, moved);
+    rebuildImageUrls();
+    renderImageList();
+    if (state.htmlApplied) applyHTML();
+};
+
+window._dragEnd = (e) => {
+    dragIdx = null;
+    document.querySelectorAll('.img-thumb').forEach(el => {
+        el.classList.remove('dragging', 'dragover');
+    });
+};
+
+window._removeImg = (i) => {
+    state.images.splice(i, 1);
+    rebuildImageUrls();
+    renderImageList();
+    $('imageDropText').textContent = state.images.length > 0 
+        ? `✅ ${state.images.length} images loaded` 
+        : '📁 Upload Multiple Images';
+    if (state.htmlApplied) applyHTML();
+};
 
 // ============================================
 // HTML EDITOR
 // ============================================
-function setupHTMLEditor() {
-    const editor = $('htmlEditor');
+function setupEditor() {
     $('applyBtn').onclick = applyHTML;
-    $('clearBtn').onclick = () => {
+    $('clearEditorBtn').onclick = () => {
         if (confirm('Clear editor?')) {
-            editor.value = '';
-            $('htmlLayer').innerHTML = '';
+            $('htmlEditor').value = '';
+            $('videoStage').innerHTML = '';
             state.htmlApplied = false;
-            $('previewStatus').textContent = 'Waiting...';
-            $('previewStatus').className = 'status';
-            checkExportReady();
+            $('statusBadge').textContent = 'Waiting';
+            $('statusBadge').className = 'badge';
+            checkReady();
         }
     };
-    editor.addEventListener('keydown', (e) => {
+    
+    $('htmlEditor').addEventListener('keydown', e => {
         if (e.key === 'Tab') {
             e.preventDefault();
-            const start = editor.selectionStart;
-            editor.value = editor.value.substring(0, start) + '    ' + editor.value.substring(editor.selectionEnd);
-            editor.selectionStart = editor.selectionEnd = start + 4;
+            const s = e.target.selectionStart;
+            e.target.value = e.target.value.substring(0, s) + '    ' + e.target.value.substring(e.target.selectionEnd);
+            e.target.selectionStart = e.target.selectionEnd = s + 4;
         }
     });
 }
 
 function applyHTML() {
     const html = $('htmlEditor').value.trim();
-    if (!html) return alert('Paste HTML first!');
-
-    const layer = $('htmlLayer');
+    if (!html) return alert('Paste your HTML design first!');
     
-    // Extract body content and styles from user HTML
+    const stage = $('videoStage');
+    
+    // Set global variables BEFORE injecting HTML
+    window.__images = state.imageUrls;
+    window.__totalDuration = state.duration;
+    
+    // Parse user HTML
     const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
+    const doc = parser.parseFromString('<body>' + html + '</body>', 'text/html');
     
-    // Get styles
-    const styles = doc.querySelectorAll('style');
-    let styleContent = '';
-    styles.forEach(s => { styleContent += s.innerHTML; });
+    // Extract styles
+    let styles = '';
+    doc.querySelectorAll('style').forEach(s => {
+        styles += s.innerHTML;
+        s.remove();
+    });
     
-    // Get body content
-    const bodyContent = doc.body ? doc.body.innerHTML : html;
+    // Extract scripts
+    const scripts = [];
+    doc.querySelectorAll('script').forEach(s => {
+        scripts.push(s.textContent);
+        s.remove();
+    });
     
-    // Get body inline styles
-    const bodyStyles = doc.body ? doc.body.getAttribute('style') || '' : '';
+    // Build stage content
+    const bodyHTML = doc.body.innerHTML;
     
-    // Inject scoped
-    layer.innerHTML = `
+    stage.innerHTML = `
         <style>
-            .html-layer > .user-content { 
-                width: 100%; 
-                height: 100%; 
-                ${bodyStyles}
+            .video-stage {
+                position: relative;
+                width: ${state.width}px;
+                height: ${state.height}px;
+                overflow: hidden;
+                background: #000;
             }
-            ${styleContent.replace(/body\s*[,{]/g, '.user-content$&').replace(/html\s*[,{]/g, '.user-content$&')}
+            ${styles}
         </style>
-        <div class="user-content">${bodyContent}</div>
+        ${bodyHTML}
     `;
     
-    // Execute scripts
-    doc.querySelectorAll('script').forEach(oldScript => {
+    // Execute scripts in global scope
+    scripts.forEach(code => {
         try {
-            const newScript = document.createElement('script');
-            newScript.textContent = oldScript.textContent;
-            // Execute in global scope so __updateAtTime is accessible
-            eval(oldScript.textContent);
+            const fn = new Function(code);
+            fn();
         } catch(e) {
             console.warn('Script error:', e);
         }
     });
     
     state.htmlApplied = true;
-    $('previewStatus').textContent = '✅ Ready';
-    $('previewStatus').className = 'status ready';
-    checkExportReady();
-    updatePlayback(0);
-}
-
-// ============================================
-// EXAMPLES
-// ============================================
-function setupExamples() {
-    $('loadExampleBtn').onclick = () => {
-        const key = $('exampleTemplate').value;
-        if (!key || !EXAMPLES[key]) return alert('Select a template!');
-        if ($('htmlEditor').value.trim() && !confirm('Replace current HTML?')) return;
-        $('htmlEditor').value = EXAMPLES[key];
-        applyHTML();
-    };
-}
-
-// ============================================
-// AUDIO
-// ============================================
-function setupAudioUpload() {
-    const dz = $('dropZone');
-    const input = $('audioInput');
-    dz.onclick = (e) => { e.preventDefault(); input.click(); };
-    dz.ondragover = e => { e.preventDefault(); dz.classList.add('drag'); };
-    dz.ondragleave = () => dz.classList.remove('drag');
-    dz.ondrop = e => { 
-        e.preventDefault(); 
-        dz.classList.remove('drag'); 
-        if (e.dataTransfer.files[0]) handleAudio(e.dataTransfer.files[0]); 
-    };
-    input.onchange = e => { if (e.target.files[0]) handleAudio(e.target.files[0]); };
-}
-
-async function handleAudio(file) {
-    $('dropZoneText').innerHTML = '⏳ Loading...';
-    try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!state.audioCtx) state.audioCtx = new AudioCtx();
-        if (state.audioCtx.state === 'suspended') await state.audioCtx.resume();
-        
-        state.audio = file;
-        const arrayBuf = await file.arrayBuffer();
-        state.audioBuffer = await new Promise((res, rej) => { 
-            state.audioCtx.decodeAudioData(arrayBuf.slice(0), res, rej); 
-        });
-        state.duration = state.audioBuffer.duration;
-        
-        $('audioMeta').innerHTML = `🎵 <strong>${file.name}</strong> | ${formatTime(state.duration)}`;
-        $('audioMeta').classList.remove('hidden');
-        $('dropZoneText').innerHTML = `✅ <strong>${file.name}</strong>`;
-        $('scrubber').max = state.duration;
-        $('playBtn').disabled = false;
-        checkExportReady();
-        updatePlayback(0);
-    } catch (err) {
-        console.error(err);
-        alert('Could not load audio: ' + err.message);
-        $('dropZoneText').innerHTML = '❌ Click to retry';
-    } finally {
-        $('audioInput').value = '';
-    }
-}
-
-// ============================================
-// SCENES
-// ============================================
-function setupScenes() {
-    $('addSceneBtn').onclick = () => {
-        state.editingSceneId = null;
-        state.currentSceneImage = null;
-        $('sceneName').value = `Scene ${state.scenes.length + 1}`;
-        $('sceneStart').value = state.scenes.length > 0 
-            ? state.scenes[state.scenes.length - 1].end 
-            : 0;
-        $('sceneEnd').value = parseFloat($('sceneStart').value) + 10;
-        $('sceneBgType').value = 'gradient';
-        $('sceneColor1').value = '#667eea';
-        $('sceneColor2').value = '#764ba2';
-        $('sceneSolidColor').value = '#1a1a2e';
-        $('sceneEffect').value = 'none';
-        $('sceneImagePreview').innerHTML = '';
-        toggleSceneBgType();
-        $('sceneModal').classList.remove('hidden');
-    };
-
-    $('sceneBgType').onchange = toggleSceneBgType;
-
-    $('sceneImageInput').onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            state.currentSceneImage = reader.result;
-            $('sceneImagePreview').innerHTML = `<img src="${reader.result}" style="max-width:100%;max-height:120px;border-radius:6px;">`;
-        };
-        reader.readAsDataURL(file);
-    };
-
-    $('saveSceneBtn').onclick = saveScene;
-    $('cancelSceneBtn').onclick = () => $('sceneModal').classList.add('hidden');
-}
-
-function toggleSceneBgType() {
-    const type = $('sceneBgType').value;
-    $('sceneGradient').classList.toggle('hidden', type !== 'gradient');
-    $('sceneSolid').classList.toggle('hidden', type !== 'solid');
-    $('sceneImage').classList.toggle('hidden', type !== 'image');
-}
-
-function saveScene() {
-    const scene = {
-        id: state.editingSceneId || Date.now(),
-        name: $('sceneName').value || `Scene ${state.scenes.length + 1}`,
-        start: parseFloat($('sceneStart').value) || 0,
-        end: parseFloat($('sceneEnd').value) || 10,
-        bgType: $('sceneBgType').value,
-        color1: $('sceneColor1').value,
-        color2: $('sceneColor2').value,
-        solidColor: $('sceneSolidColor').value,
-        image: state.currentSceneImage,
-        effect: $('sceneEffect').value
-    };
-
-    // If editing, preserve existing image if not changed
-    if (state.editingSceneId) {
-        const existing = state.scenes.find(s => s.id === state.editingSceneId);
-        if (existing && !state.currentSceneImage && scene.bgType === 'image') {
-            scene.image = existing.image;
-        }
-        state.scenes = state.scenes.map(s => s.id === state.editingSceneId ? scene : s);
-    } else {
-        state.scenes.push(scene);
-    }
-
-    state.scenes.sort((a, b) => a.start - b.start);
-    renderScenesList();
-    $('sceneModal').classList.add('hidden');
-    updatePlayback(state.currentTime);
-}
-
-function renderScenesList() {
-    const list = $('scenesList');
-    if (state.scenes.length === 0) {
-        list.innerHTML = '<p class="hint">No scenes yet. Click "Add New Scene" to start.</p>';
-        return;
-    }
-    list.innerHTML = state.scenes.map(s => {
-        let thumb = '';
-        if (s.bgType === 'gradient') thumb = `background:linear-gradient(135deg,${s.color1},${s.color2});`;
-        else if (s.bgType === 'solid') thumb = `background:${s.solidColor};`;
-        else if (s.image) thumb = `background-image:url(${s.image});`;
-        
-        return `
-            <div class="scene-item">
-                <div class="scene-thumb" style="${thumb}"></div>
-                <div class="scene-info" onclick="window._editScene(${s.id})">
-                    <div class="name">${escapeHtml(s.name)}</div>
-                    <div class="time">${formatTime(s.start)} → ${formatTime(s.end)}</div>
-                </div>
-                <div class="scene-actions">
-                    <button onclick="window._editScene(${s.id})" title="Edit">✏️</button>
-                    <button class="delete" onclick="window._deleteScene(${s.id})" title="Delete">🗑️</button>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-window._editScene = (id) => {
-    const scene = state.scenes.find(s => s.id === id);
-    if (!scene) return;
-    state.editingSceneId = id;
-    state.currentSceneImage = scene.image;
-    $('sceneName').value = scene.name;
-    $('sceneStart').value = scene.start;
-    $('sceneEnd').value = scene.end;
-    $('sceneBgType').value = scene.bgType;
-    $('sceneColor1').value = scene.color1;
-    $('sceneColor2').value = scene.color2;
-    $('sceneSolidColor').value = scene.solidColor;
-    $('sceneEffect').value = scene.effect;
-    $('sceneImagePreview').innerHTML = scene.image ? `<img src="${scene.image}" style="max-width:100%;max-height:120px;border-radius:6px;">` : '';
-    toggleSceneBgType();
-    $('sceneModal').classList.remove('hidden');
-};
-
-window._deleteScene = (id) => {
-    if (!confirm('Delete this scene?')) return;
-    state.scenes = state.scenes.filter(s => s.id !== id);
-    renderScenesList();
-    updatePlayback(state.currentTime);
-};
-
-function updateSceneAtTime(time) {
-    const layer = $('sceneLayer');
-    const active = state.scenes.find(s => time >= s.start && time <= s.end);
-    
-    if (!active) {
-        layer.style.background = 'linear-gradient(135deg, #1a1a2e, #16213e)';
-        layer.style.backgroundImage = '';
-        layer.className = 'scene-layer';
-        return;
-    }
-
-    // Apply background
-    if (active.bgType === 'gradient') {
-        layer.style.background = `linear-gradient(135deg, ${active.color1}, ${active.color2})`;
-        layer.style.backgroundImage = '';
-    } else if (active.bgType === 'solid') {
-        layer.style.background = active.solidColor;
-        layer.style.backgroundImage = '';
-    } else if (active.bgType === 'image' && active.image) {
-        layer.style.background = `#000`;
-        layer.style.backgroundImage = `url(${active.image})`;
-        layer.style.backgroundSize = 'cover';
-        layer.style.backgroundPosition = 'center';
-    }
-
-    // Apply effect class
-    layer.className = 'scene-layer';
-    if (active.effect && active.effect !== 'none') {
-        layer.classList.add(`scene-${active.effect}`);
-    }
+    $('statusBadge').textContent = '✅ Ready';
+    $('statusBadge').className = 'badge ok';
+    checkReady();
+    update(state.currentTime);
 }
 
 // ============================================
 // VIDEO SIZE
 // ============================================
-function updateAspectRatio() {
+function updateSize() {
     $('aspectRatio').onchange = () => {
         const [w, h] = $('aspectRatio').value.split('x').map(Number);
         state.width = w;
         state.height = h;
-        $('videoStage').style.width = `${w}px`;
-        $('videoStage').style.height = `${h}px`;
-        scalePreview();
+        $('videoStage').style.width = w + 'px';
+        $('videoStage').style.height = h + 'px';
+        scaleStage();
+        if (state.htmlApplied) applyHTML();
     };
-    $('fps').onchange = () => { state.fps = parseInt($('fps').value); };
     const [w, h] = $('aspectRatio').value.split('x').map(Number);
     state.width = w;
     state.height = h;
-    $('videoStage').style.width = `${w}px`;
-    $('videoStage').style.height = `${h}px`;
+    $('videoStage').style.width = w + 'px';
+    $('videoStage').style.height = h + 'px';
 }
 
-function scalePreview() {
+function scaleStage() {
     const wrap = document.querySelector('.stage-wrap');
     const stage = $('videoStage');
-    if (!wrap || !stage) return;
-    const scale = Math.min(
-        (wrap.clientWidth - 20) / state.width, 
-        (wrap.clientHeight - 20) / state.height, 
-        1
-    );
+    if (!wrap) return;
+    const scale = Math.min((wrap.clientWidth - 16) / state.width, (wrap.clientHeight - 16) / state.height, 1);
     stage.style.transform = `scale(${scale})`;
 }
 
@@ -380,201 +303,237 @@ function setupPlayer() {
     $('playBtn').onclick = togglePlay;
     $('scrubber').oninput = e => {
         state.currentTime = parseFloat(e.target.value);
-        updatePlayback(state.currentTime);
+        update(state.currentTime);
     };
 }
 
-function togglePlay() {
-    state.isPlaying ? pauseAudio() : playAudio();
-}
+function togglePlay() { state.isPlaying ? pause() : play(); }
 
-function playAudio() {
+function play() {
     if (!state.audioBuffer) return;
     state.isPlaying = true;
     $('playBtn').textContent = '⏸';
     state.sourceNode = state.audioCtx.createBufferSource();
     state.sourceNode.buffer = state.audioBuffer;
     state.sourceNode.connect(state.audioCtx.destination);
-    const offset = state.currentTime;
-    state.startTimestamp = state.audioCtx.currentTime - offset;
-    state.sourceNode.start(0, offset);
+    state.startTimestamp = state.audioCtx.currentTime - state.currentTime;
+    state.sourceNode.start(0, state.currentTime);
     function loop() {
         if (!state.isPlaying) return;
         state.currentTime = state.audioCtx.currentTime - state.startTimestamp;
-        if (state.currentTime >= state.duration) {
-            pauseAudio();
-            state.currentTime = 0;
-            updatePlayback(0);
-            return;
-        }
-        updatePlayback(state.currentTime);
+        if (state.currentTime >= state.duration) { pause(); state.currentTime = 0; update(0); return; }
+        update(state.currentTime);
         state.animFrameId = requestAnimationFrame(loop);
     }
     loop();
 }
 
-function pauseAudio() {
+function pause() {
     state.isPlaying = false;
     $('playBtn').textContent = '▶';
-    if (state.sourceNode) {
-        try { state.sourceNode.stop(); } catch(e){}
-        state.sourceNode = null;
-    }
+    if (state.sourceNode) { try { state.sourceNode.stop(); } catch(e){} state.sourceNode = null; }
     cancelAnimationFrame(state.animFrameId);
 }
 
-function updatePlayback(time) {
+function update(time) {
     $('scrubber').value = time;
-    $('timeDisplay').textContent = `${formatTime(time)} / ${formatTime(state.duration)}`;
-    
-    // Update scene
-    updateSceneAtTime(time);
-    
-    // Update HTML captions
-    try {
-        if (window.__updateAtTime) window.__updateAtTime(time);
-    } catch(e) {}
+    $('timeDisplay').textContent = `${fmt(time)} / ${fmt(state.duration)}`;
+    try { if (window.__updateAtTime) window.__updateAtTime(time); } catch(e) {}
+}
+
+// ============================================
+// TEMPLATES
+// ============================================
+function setupTemplates() {
+    $('loadTemplateBtn').onclick = () => {
+        const key = $('templateSelect').value;
+        if (!key || !TEMPLATES[key]) return alert('Select a template!');
+        if ($('htmlEditor').value.trim() && !confirm('Replace current HTML?')) return;
+        $('htmlEditor').value = TEMPLATES[key];
+        applyHTML();
+    };
 }
 
 // ============================================
 // PROJECTS
 // ============================================
 function setupProjects() {
-    $('saveBtn').onclick = saveProject;
-    $('newBtn').onclick = newProject;
-    $('showProjectsBtn').onclick = toggleProjectsList;
-}
-
-function saveProject() {
-    const name = $('projectName').value.trim();
-    if (!name) return alert('Enter a project name!');
-    const project = {
-        name,
-        html: $('htmlEditor').value,
-        aspectRatio: $('aspectRatio').value,
-        fps: $('fps').value,
-        scenes: state.scenes,
-        savedAt: new Date().toISOString()
+    $('saveBtn').onclick = () => {
+        const name = $('projectName').value.trim();
+        if (!name) return alert('Enter a name!');
+        const p = JSON.parse(localStorage.getItem('vidProjects') || '{}');
+        p[name] = { name, html: $('htmlEditor').value, aspect: $('aspectRatio').value, images: state.images };
+        localStorage.setItem('vidProjects', JSON.stringify(p));
+        alert('Saved!');
     };
-    const projects = JSON.parse(localStorage.getItem('htmlVideoProjects') || '{}');
-    projects[name] = project;
-    localStorage.setItem('htmlVideoProjects', JSON.stringify(projects));
-    alert(`✅ Saved "${name}"`);
+    $('newBtn').onclick = () => {
+        if (!confirm('New project?')) return;
+        $('projectName').value = 'my-video';
+        $('htmlEditor').value = '';
+        $('videoStage').innerHTML = '';
+        state.images = [];
+        state.imageUrls = [];
+        window.__images = [];
+        state.htmlApplied = false;
+        renderImageList();
+        $('imageDropText').textContent = '📁 Upload Multiple Images';
+        $('statusBadge').textContent = 'Waiting';
+        $('statusBadge').className = 'badge';
+        checkReady();
+    };
+    $('loadBtn').onclick = () => {
+        const list = $('projectsList');
+        list.classList.toggle('hidden');
+        if (!list.classList.contains('hidden')) {
+            const p = JSON.parse(localStorage.getItem('vidProjects') || '{}');
+            const keys = Object.keys(p);
+            list.innerHTML = keys.length === 0 
+                ? '<p class="hint">No projects saved.</p>'
+                : keys.map(k => `<div class="proj-item"><span onclick="window._loadProj('${k.replace(/'/g,'\\\'')}')">${k}</span><button onclick="window._delProj('${k.replace(/'/g,'\\\'')}')">&times;</button></div>`).join('');
+        }
+    };
 }
 
-function newProject() {
-    if (!confirm('Start new project? Current work will be lost.')) return;
-    $('projectName').value = 'my-video';
-    $('htmlEditor').value = '';
-    $('htmlLayer').innerHTML = '';
-    state.scenes = [];
-    state.htmlApplied = false;
-    renderScenesList();
-    $('previewStatus').textContent = 'Waiting...';
-    $('previewStatus').className = 'status';
-    checkExportReady();
-}
-
-function toggleProjectsList() {
-    const list = $('projectsList');
-    list.classList.toggle('hidden');
-    if (!list.classList.contains('hidden')) renderProjects();
-}
-
-function renderProjects() {
-    const projects = JSON.parse(localStorage.getItem('htmlVideoProjects') || '{}');
-    const list = $('projectsList');
-    const keys = Object.keys(projects);
-    if (keys.length === 0) {
-        list.innerHTML = '<p class="hint">No saved projects.</p>';
-        return;
-    }
-    list.innerHTML = keys.map(name => `
-        <div class="project-item">
-            <span onclick="window._loadProject('${name.replace(/'/g, "\\'")}')">📄 ${escapeHtml(name)}</span>
-            <button onclick="window._deleteProject('${name.replace(/'/g, "\\'")}')">🗑️</button>
-        </div>
-    `).join('');
-}
-
-window._loadProject = (name) => {
-    const p = JSON.parse(localStorage.getItem('htmlVideoProjects') || '{}')[name];
+window._loadProj = name => {
+    const p = JSON.parse(localStorage.getItem('vidProjects') || '{}')[name];
     if (!p) return;
     $('projectName').value = p.name;
     $('htmlEditor').value = p.html;
-    $('aspectRatio').value = p.aspectRatio;
-    $('fps').value = p.fps;
-    state.scenes = p.scenes || [];
-    updateAspectRatio();
-    renderScenesList();
+    $('aspectRatio').value = p.aspect;
+    state.images = p.images || [];
+    rebuildImageUrls();
+    renderImageList();
+    updateSize();
     applyHTML();
     $('projectsList').classList.add('hidden');
+    $('imageDropText').textContent = state.images.length > 0 ? `✅ ${state.images.length} images` : '📁 Upload Multiple Images';
 };
 
-window._deleteProject = (name) => {
+window._delProj = name => {
     if (!confirm(`Delete "${name}"?`)) return;
-    const p = JSON.parse(localStorage.getItem('htmlVideoProjects') || '{}');
+    const p = JSON.parse(localStorage.getItem('vidProjects') || '{}');
     delete p[name];
-    localStorage.setItem('htmlVideoProjects', JSON.stringify(p));
-    renderProjects();
+    localStorage.setItem('vidProjects', JSON.stringify(p));
+    $('loadBtn').click(); $('loadBtn').click();
 };
 
 // ============================================
-// EXPORT (Fixed with html2canvas)
+// EXPORT
 // ============================================
 function setupExport() {
-    $('exportBtn').onclick = () => renderVideo($('exportFormat').value);
-    $('cancelExportBtn').onclick = () => { state.exportCancelled = true; };
+    $('exportBtn').onclick = exportVideo;
+    $('cancelBtn').onclick = () => { state.exportCancelled = true; };
 }
 
-function checkExportReady() {
+function checkReady() {
     $('exportBtn').disabled = !state.audioBuffer;
 }
 
-async function captureStageToCanvas(canvas) {
+async function captureFrame(canvas) {
     const stage = $('videoStage');
-    try {
-        const rendered = await html2canvas(stage, {
-            width: state.width,
-            height: state.height,
-            backgroundColor: '#000000',
-            scale: 1,
-            logging: false,
-            useCORS: true,
-            allowTaint: true
-        });
-        canvas.width = state.width;
-        canvas.height = state.height;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, state.width, state.height);
-        ctx.drawImage(rendered, 0, 0, state.width, state.height);
-        return true;
-    } catch (err) {
-        console.error('Capture error:', err);
-        return false;
-    }
+    const rendered = await html2canvas(stage, {
+        width: state.width,
+        height: state.height,
+        backgroundColor: '#000000',
+        scale: 1,
+        logging: false,
+        useCORS: true,
+        allowTaint: true
+    });
+    canvas.width = state.width;
+    canvas.height = state.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(rendered, 0, 0, state.width, state.height);
 }
 
-async function renderVideo(format) {
+async function exportVideo() {
     if (!state.audioBuffer) return alert('Upload audio first!');
-    pauseAudio();
+    pause();
     state.exportCancelled = false;
     
     $('exportModal').classList.remove('hidden');
-    $('exportTitle').textContent = `Exporting ${format.toUpperCase()}...`;
-    $('exportProgress').style.width = '0%';
-    $('exportDetail').textContent = 'Starting...';
+    $('progBar').style.width = '0%';
+    $('progText').textContent = 'Starting...';
     
     const canvas = $('exportCanvas');
+    const fps = 30;
     
     try {
-        if (format === 'webm') {
-            await exportWebM(canvas);
-        } else {
-            await exportMP4(canvas);
-        }
-    } catch (err) {
+        canvas.width = state.width;
+        canvas.height = state.height;
+        
+        // Initial capture
+        update(0);
+        await new Promise(r => setTimeout(r, 100));
+        await captureFrame(canvas);
+        
+        const stream = canvas.captureStream(fps);
+        
+        // Audio
+        const actx = new AudioContext();
+        const src = actx.createBufferSource();
+        src.buffer = state.audioBuffer;
+        const dest = actx.createMediaStreamDestination();
+        src.connect(dest);
+        stream.addTrack(dest.stream.getAudioTracks()[0]);
+        
+        let mime = 'video/webm';
+        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) mime = 'video/webm;codecs=vp9,opus';
+        else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) mime = 'video/webm;codecs=vp8,opus';
+        
+        const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 4000000 });
+        const chunks = [];
+        rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+        
+        await new Promise((resolve, reject) => {
+            rec.onstop = () => {
+                if (chunks.length === 0) { reject(new Error('No data recorded')); return; }
+                const blob = new Blob(chunks, { type: mime });
+                download(blob, ($('projectName').value || 'video') + '.webm');
+                resolve();
+            };
+            rec.onerror = reject;
+            
+            rec.start(100);
+            src.start(0);
+            
+            const t0 = performance.now();
+            
+            async function loop() {
+                if (state.exportCancelled) {
+                    rec.stop(); try { src.stop(); } catch(e){}
+                    reject(new Error('Cancelled'));
+                    return;
+                }
+                
+                const elapsed = (performance.now() - t0) / 1000;
+                
+                if (elapsed >= state.duration) {
+                    update(state.duration - 0.01);
+                    await captureFrame(canvas);
+                    await new Promise(r => setTimeout(r, 300));
+                    rec.stop();
+                    try { src.stop(); } catch(e){}
+                    return;
+                }
+                
+                update(elapsed);
+                await captureFrame(canvas);
+                
+                const pct = Math.round((elapsed / state.duration) * 100);
+                $('progBar').style.width = pct + '%';
+                $('progText').textContent = `Recording: ${pct}% (${fmt(elapsed)} / ${fmt(state.duration)})`;
+                
+                requestAnimationFrame(loop);
+            }
+            loop();
+        });
+        
+        $('progBar').style.width = '100%';
+        $('progText').textContent = '✅ Done! Downloading...';
+        await new Promise(r => setTimeout(r, 1500));
+        
+    } catch(err) {
         console.error(err);
         if (!state.exportCancelled) alert('Export failed: ' + err.message);
     } finally {
@@ -582,204 +541,20 @@ async function renderVideo(format) {
     }
 }
 
-async function exportWebM(canvas) {
-    const w = state.width, h = state.height, fps = state.fps;
-    canvas.width = w;
-    canvas.height = h;
-    
-    // Do initial capture to make sure canvas is ready
-    await captureStageToCanvas(canvas);
-    
-    const stream = canvas.captureStream(fps);
-    
-    // Setup audio
-    const audioCtx = new AudioContext();
-    const src = audioCtx.createBufferSource();
-    src.buffer = state.audioBuffer;
-    const dest = audioCtx.createMediaStreamDestination();
-    src.connect(dest);
-    stream.addTrack(dest.stream.getAudioTracks()[0]);
-    
-    // Pick supported mime
-    let mime = 'video/webm';
-    if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
-        mime = 'video/webm;codecs=vp9,opus';
-    } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
-        mime = 'video/webm;codecs=vp8,opus';
-    }
-    
-    const rec = new MediaRecorder(stream, { 
-        mimeType: mime, 
-        videoBitsPerSecond: 3000000 
-    });
-    
-    const chunks = [];
-    rec.ondataavailable = e => { 
-        if (e.data && e.data.size > 0) chunks.push(e.data); 
-    };
-    
-    return new Promise((resolve, reject) => {
-        rec.onstop = () => {
-            console.log(`Recorded ${chunks.length} chunks`);
-            if (chunks.length === 0) {
-                reject(new Error('No video data recorded'));
-                return;
-            }
-            const blob = new Blob(chunks, { type: mime });
-            console.log(`Blob size: ${blob.size} bytes`);
-            downloadBlob(blob, `${$('projectName').value || 'video'}.webm`);
-            resolve();
-        };
-        rec.onerror = (e) => {
-            console.error('Recorder error:', e);
-            reject(new Error('Recording failed'));
-        };
-        
-        rec.start(100); // Collect data every 100ms
-        src.start(0);
-        
-        const t0 = performance.now();
-        
-        async function loop() {
-            if (state.exportCancelled) {
-                rec.stop();
-                try { src.stop(); } catch(e){}
-                reject(new Error('Cancelled'));
-                return;
-            }
-            
-            const el = (performance.now() - t0) / 1000;
-            
-            if (el >= state.duration) {
-                // Ensure last frame captured
-                updatePlayback(state.duration - 0.01);
-                await captureStageToCanvas(canvas);
-                await new Promise(r => setTimeout(r, 200));
-                rec.stop();
-                try { src.stop(); } catch(e){}
-                return;
-            }
-            
-            updatePlayback(el);
-            await captureStageToCanvas(canvas);
-            
-            const pct = Math.round((el / state.duration) * 100);
-            $('exportProgress').style.width = `${pct}%`;
-            $('exportDetail').textContent = `Recording: ${pct}% (${formatTime(el)} / ${formatTime(state.duration)})`;
-            
-            requestAnimationFrame(loop);
-        }
-        loop();
-    });
-}
-
-async function exportMP4(canvas) {
-    const w = state.width, h = state.height, fps = state.fps;
-    
-    if (typeof FFmpegWASM === 'undefined') {
-        return alert('FFmpeg not loaded. Try WebM instead.');
-    }
-    
-    const { FFmpeg } = FFmpegWASM;
-    const { fetchFile } = FFmpegUtil;
-    
-    $('exportDetail').textContent = 'Loading FFmpeg (first time may take a moment)...';
-    const ffmpeg = new FFmpeg();
-    
-    try {
-        await ffmpeg.load({
-            coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-            wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
-        });
-    } catch (err) {
-        throw new Error('FFmpeg failed to load. Use WebM instead. Error: ' + err.message);
-    }
-    
-    $('exportDetail').textContent = 'Preparing audio...';
-    const audioData = await fetchFile(state.audio);
-    await ffmpeg.writeFile('audio.mp3', audioData);
-    
-    const totalFrames = Math.ceil(state.duration * fps);
-    
-    for (let i = 0; i < totalFrames; i++) {
-        if (state.exportCancelled) throw new Error('Cancelled');
-        
-        const frameTime = i / fps;
-        updatePlayback(frameTime);
-        
-        // Wait for DOM to update
-        await new Promise(r => setTimeout(r, 30));
-        
-        await captureStageToCanvas(canvas);
-        
-        const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
-        if (!blob) continue;
-        
-        const buffer = new Uint8Array(await blob.arrayBuffer());
-        await ffmpeg.writeFile(`f_${String(i).padStart(6, '0')}.jpg`, buffer);
-        
-        if (i % 3 === 0) {
-            const pct = Math.round((i / totalFrames) * 80);
-            $('exportProgress').style.width = `${pct}%`;
-            $('exportDetail').textContent = `Rendering frame ${i}/${totalFrames}`;
-        }
-    }
-    
-    $('exportDetail').textContent = 'Encoding MP4...';
-    $('exportProgress').style.width = '85%';
-    
-    await ffmpeg.exec([
-        '-framerate', String(fps),
-        '-i', 'f_%06d.jpg',
-        '-i', 'audio.mp3',
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-pix_fmt', 'yuv420p',
-        '-c:a', 'aac',
-        '-shortest',
-        '-y',
-        'output.mp4'
-    ]);
-    
-    const data = await ffmpeg.readFile('output.mp4');
-    const blob = new Blob([data.buffer], { type: 'video/mp4' });
-    downloadBlob(blob, `${$('projectName').value || 'video'}.mp4`);
-    
-    // Cleanup
-    for (let i = 0; i < totalFrames; i++) {
-        try { await ffmpeg.deleteFile(`f_${String(i).padStart(6, '0')}.jpg`); } catch(e){}
-    }
-    try { 
-        await ffmpeg.deleteFile('audio.mp3'); 
-        await ffmpeg.deleteFile('output.mp4'); 
-    } catch(e){}
-}
-
 // ============================================
 // UTILS
 // ============================================
-function formatTime(s) {
+function fmt(s) {
     if (!s || isNaN(s)) return '0:00';
-    return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+    return Math.floor(s/60) + ':' + String(Math.floor(s%60)).padStart(2, '0');
 }
 
-function escapeHtml(t) {
-    const d = document.createElement('div');
-    d.textContent = t;
-    return d.innerHTML;
-}
-
-function downloadBlob(blob, filename) {
-    console.log(`Downloading: ${filename}, size: ${blob.size} bytes`);
+function download(blob, name) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
+    a.download = name;
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }, 1000);
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 2000);
 }
