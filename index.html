@@ -3,56 +3,81 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HTML to Video Converter</title>
+    <title>HTML to Video Creator - With Scenes</title>
     <link rel="stylesheet" href="style.css">
+    <!-- html2canvas for reliable rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- FFmpeg -->
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.min.js"></script>
     <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/util.min.js"></script>
 </head>
 <body>
     <div class="app">
-        <!-- ===== LEFT: HTML EDITOR ===== -->
+        <!-- ===== SIDEBAR ===== -->
         <aside class="sidebar">
             <header class="app-header">
-                <h1>🎬 HTML → Video</h1>
-                <p>Paste your HTML design, upload audio, export video</p>
+                <h1>🎬 Video Creator</h1>
+                <p>HTML + Audio + Scenes → Video</p>
             </header>
 
-            <!-- Project Name -->
             <section class="card">
                 <label>📝 Project Name</label>
-                <input type="text" id="projectName" value="my-video" placeholder="Project name (used for filename)">
+                <input type="text" id="projectName" value="my-video">
             </section>
 
-            <!-- Audio Upload -->
+            <!-- Audio -->
             <section class="card">
-                <h3>🎵 1. Upload Audio</h3>
+                <h3>🎵 1. Audio</h3>
                 <div class="drop-zone" id="dropZone">
-                    <span id="dropZoneText">📁 Click to upload audio</span>
+                    <span id="dropZoneText">📁 Upload MP3/WAV</span>
                 </div>
                 <input type="file" id="audioInput" accept="audio/*" hidden>
                 <div id="audioMeta" class="meta hidden"></div>
             </section>
 
-            <!-- Video Settings -->
+            <!-- Video Size -->
             <section class="card">
                 <h3>📐 2. Video Size</h3>
                 <select id="aspectRatio">
-                    <option value="1920x1080">🖥️ 1920 × 1080 (16:9 Landscape)</option>
-                    <option value="1080x1920">📱 1080 × 1920 (9:16 Vertical)</option>
-                    <option value="1080x1080">🟦 1080 × 1080 (Square)</option>
-                    <option value="1280x720">🖥️ 1280 × 720 (HD 720p)</option>
+                    <option value="1280x720" selected>🖥️ 1280×720 (HD)</option>
+                    <option value="1920x1080">🖥️ 1920×1080 (Full HD)</option>
+                    <option value="1080x1920">📱 1080×1920 (Vertical)</option>
+                    <option value="1080x1080">🟦 1080×1080 (Square)</option>
                 </select>
-                <label style="margin-top:8px;">Frame Rate</label>
+                <label style="margin-top:8px;">FPS</label>
                 <select id="fps">
-                    <option value="24">24 FPS (Film)</option>
-                    <option value="30" selected>30 FPS (Standard)</option>
-                    <option value="60">60 FPS (Smooth)</option>
+                    <option value="24">24</option>
+                    <option value="30" selected>30</option>
                 </select>
             </section>
 
-            <!-- Save/Load Projects -->
+            <!-- SCENES MANAGER -->
             <section class="card">
-                <h3>💾 3. My Projects</h3>
+                <h3>🎞️ 3. Scenes (Backgrounds)</h3>
+                <p class="hint">Add multiple scenes with different backgrounds. Each scene plays for its time range.</p>
+                
+                <button id="addSceneBtn" class="btn btn-primary" style="width:100%;margin-bottom:8px;">
+                    ➕ Add New Scene
+                </button>
+
+                <div id="scenesList" class="scenes-list"></div>
+            </section>
+
+            <!-- Templates -->
+            <section class="card">
+                <h3>💡 4. HTML Template</h3>
+                <select id="exampleTemplate">
+                    <option value="">-- Choose --</option>
+                    <option value="memorial">🕊️ Memorial Tribute</option>
+                    <option value="karaoke">🎤 Karaoke</option>
+                    <option value="quote">💬 Quote</option>
+                </select>
+                <button id="loadExampleBtn" class="btn btn-secondary" style="margin-top:6px;width:100%;">Load</button>
+            </section>
+
+            <!-- Projects -->
+            <section class="card">
+                <h3>💾 5. Projects</h3>
                 <div class="btn-row">
                     <button id="saveBtn" class="btn btn-secondary">💾 Save</button>
                     <button id="newBtn" class="btn btn-secondary">➕ New</button>
@@ -61,77 +86,46 @@
                 <div id="projectsList" class="projects-list hidden"></div>
             </section>
 
-            <!-- Template Examples -->
-            <section class="card">
-                <h3>💡 4. Load Example Template</h3>
-                <select id="exampleTemplate">
-                    <option value="">-- Choose Example --</option>
-                    <option value="memorial">🕊️ Memorial Tribute</option>
-                    <option value="karaoke">🎤 Karaoke Lyrics</option>
-                    <option value="tiktok">📱 TikTok Style</option>
-                    <option value="quote">💬 Quote Card</option>
-                    <option value="podcast">🎙️ Podcast Clip</option>
-                </select>
-                <button id="loadExampleBtn" class="btn btn-primary" style="margin-top:8px;width:100%;">Load Template</button>
-            </section>
-
             <!-- Export -->
             <section class="card">
-                <h3>🎬 5. Export</h3>
+                <h3>🎬 6. Export Video</h3>
                 <select id="exportFormat">
-                    <option value="mp4" selected>MP4 (HD Quality)</option>
-                    <option value="webm">WebM (Faster)</option>
+                    <option value="webm" selected>WebM (Recommended)</option>
+                    <option value="mp4">MP4 (Slower)</option>
                 </select>
-                <button id="exportBtn" class="btn btn-export" disabled>🎬 Export Video</button>
+                <button id="exportBtn" class="btn btn-export" disabled>🎬 Export & Download</button>
             </section>
         </aside>
 
-        <!-- ===== CENTER: HTML CODE EDITOR ===== -->
+        <!-- ===== CENTER: EDITOR ===== -->
         <main class="editor-area">
             <div class="editor-header">
-                <h3>✏️ Paste Your HTML Design</h3>
+                <h3>✏️ HTML Design Code</h3>
                 <div class="editor-tools">
-                    <button id="formatBtn" class="btn btn-secondary">🎨 Beautify</button>
                     <button id="clearBtn" class="btn btn-secondary">🗑️ Clear</button>
                     <button id="applyBtn" class="btn btn-primary">▶ Apply & Preview</button>
                 </div>
             </div>
-            <textarea id="htmlEditor" spellcheck="false" placeholder="Paste your complete HTML here...
-
-Example:
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body { background: black; color: white; }
-        /* your CSS here */
-    </style>
-</head>
-<body>
-    <h1>Your Content</h1>
-    <script>
-        // Your captions array
-        const captions = [
-            { start: 0, end: 3, text: 'Hello' },
-            { start: 3, end: 6, text: 'World' }
-        ];
-    </script>
-</body>
-</html>"></textarea>
+            <textarea id="htmlEditor" spellcheck="false" placeholder="Paste your HTML design here..."></textarea>
         </main>
 
-        <!-- ===== RIGHT: LIVE PREVIEW ===== -->
+        <!-- ===== RIGHT: PREVIEW ===== -->
         <section class="preview-area">
             <div class="preview-header">
-                <h3>👀 Live Preview</h3>
-                <span id="previewStatus" class="status">Waiting for HTML...</span>
+                <h3>👀 Preview</h3>
+                <span id="previewStatus" class="status">Waiting...</span>
             </div>
 
-            <div class="preview-frame-wrap">
-                <iframe id="previewFrame" class="preview-frame" sandbox="allow-scripts allow-same-origin"></iframe>
+            <!-- LIVE STAGE (this is what gets recorded) -->
+            <div class="stage-wrap">
+                <div id="videoStage" class="video-stage">
+                    <!-- Scene backgrounds render here -->
+                    <div id="sceneLayer" class="scene-layer"></div>
+                    <!-- HTML content renders here -->
+                    <div id="htmlLayer" class="html-layer"></div>
+                </div>
             </div>
 
-            <!-- Player Controls -->
             <div class="player">
                 <button id="playBtn" class="play-btn" disabled>▶</button>
                 <span id="timeDisplay">0:00 / 0:00</span>
@@ -150,6 +144,72 @@ Example:
                 </div>
                 <p id="exportDetail">Preparing...</p>
                 <button id="cancelExportBtn" class="btn btn-secondary" style="margin-top:14px;">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Scene Editor Modal -->
+        <div id="sceneModal" class="modal hidden">
+            <div class="modal-content" style="width:500px;text-align:left;">
+                <h3>🎞️ Edit Scene</h3>
+                <div style="margin-top:12px;">
+                    <label>Scene Name</label>
+                    <input type="text" id="sceneName" placeholder="Scene 1">
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+                        <div>
+                            <label>Start Time (sec)</label>
+                            <input type="number" id="sceneStart" step="0.1" min="0" value="0">
+                        </div>
+                        <div>
+                            <label>End Time (sec)</label>
+                            <input type="number" id="sceneEnd" step="0.1" min="0" value="10">
+                        </div>
+                    </div>
+
+                    <label style="margin-top:8px;">Background Type</label>
+                    <select id="sceneBgType">
+                        <option value="gradient">Gradient</option>
+                        <option value="solid">Solid Color</option>
+                        <option value="image">Upload Image</option>
+                    </select>
+
+                    <div id="sceneGradient" style="margin-top:8px;">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                            <div>
+                                <label>Color 1</label>
+                                <input type="color" id="sceneColor1" value="#667eea">
+                            </div>
+                            <div>
+                                <label>Color 2</label>
+                                <input type="color" id="sceneColor2" value="#764ba2">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="sceneSolid" class="hidden" style="margin-top:8px;">
+                        <label>Color</label>
+                        <input type="color" id="sceneSolidColor" value="#1a1a2e">
+                    </div>
+
+                    <div id="sceneImage" class="hidden" style="margin-top:8px;">
+                        <label>Upload Image</label>
+                        <input type="file" id="sceneImageInput" accept="image/*">
+                        <div id="sceneImagePreview" style="margin-top:8px;"></div>
+                    </div>
+
+                    <label style="margin-top:8px;">Effect</label>
+                    <select id="sceneEffect">
+                        <option value="none">None</option>
+                        <option value="fadeIn">Fade In</option>
+                        <option value="zoom">Zoom (Ken Burns)</option>
+                        <option value="pan">Pan</option>
+                    </select>
+                </div>
+
+                <div style="display:flex;gap:8px;margin-top:16px;">
+                    <button id="saveSceneBtn" class="btn btn-primary" style="flex:1;">💾 Save Scene</button>
+                    <button id="cancelSceneBtn" class="btn btn-secondary">Cancel</button>
+                </div>
             </div>
         </div>
     </div>
