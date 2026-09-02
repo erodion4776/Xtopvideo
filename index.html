@@ -3,284 +3,158 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Creator Studio - Multi Template</title>
+    <title>HTML to Video Converter</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Georgia&family=Montserrat:wght@400;700;900&family=Poppins:wght@400;700;900&family=Bebas+Neue&family=Playfair+Display:wght@400;700;900&family=Space+Grotesk:wght@700&family=Dancing+Script:wght@700&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.min.js"></script>
     <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/util.min.js"></script>
 </head>
 <body>
-    <div class="app-layout">
-        <!-- ===== SIDEBAR ===== -->
+    <div class="app">
+        <!-- ===== LEFT: HTML EDITOR ===== -->
         <aside class="sidebar">
-            <header class="sidebar-header">
-                <h2>🎬 Video Creator Studio</h2>
-                <p>Multi-Template Video Maker</p>
+            <header class="app-header">
+                <h1>🎬 HTML → Video</h1>
+                <p>Paste your HTML design, upload audio, export video</p>
             </header>
 
-            <!-- Project Manager -->
-            <section class="card project-card">
-                <h3>📁 Project</h3>
-                <input type="text" id="projectName" value="My New Video" placeholder="Project name...">
-                <div class="btn-group" style="margin-top:8px;">
-                    <button id="newProjectBtn" class="btn btn-secondary">➕ New</button>
-                    <button id="saveProjectBtn" class="btn btn-secondary">💾 Save</button>
-                    <button id="loadProjectBtn" class="btn btn-secondary">📂 Load</button>
-                </div>
-                <div id="savedProjectsList" class="saved-projects hidden"></div>
+            <!-- Project Name -->
+            <section class="card">
+                <label>📝 Project Name</label>
+                <input type="text" id="projectName" value="my-video" placeholder="Project name (used for filename)">
             </section>
 
-            <!-- 1. TEMPLATE SELECTOR -->
+            <!-- Audio Upload -->
             <section class="card">
-                <h3>1. 🎨 Choose Template</h3>
-                <div id="templateGrid" class="template-grid">
-                    <!-- Templates loaded dynamically -->
-                </div>
-            </section>
-
-            <!-- 2. Audio -->
-            <section class="card">
-                <h3>2. 🎵 Audio Track</h3>
+                <h3>🎵 1. Upload Audio</h3>
                 <div class="drop-zone" id="dropZone">
-                    <span id="dropZoneText">📁 Click or Drop Audio Here</span>
+                    <span id="dropZoneText">📁 Click to upload audio</span>
                 </div>
-                <input type="file" id="audioInput" accept="audio/*, .mp3, .wav, .m4a, .aac, .ogg" style="display:none;">
-                <div id="audioMeta" class="meta-tag hidden"></div>
+                <input type="file" id="audioInput" accept="audio/*" hidden>
+                <div id="audioMeta" class="meta hidden"></div>
             </section>
 
-            <!-- 3. Aspect Ratio -->
+            <!-- Video Settings -->
             <section class="card">
-                <h3>3. 📐 Video Format</h3>
+                <h3>📐 2. Video Size</h3>
                 <select id="aspectRatio">
-                    <option value="1920x1080">🖥️ 16:9 Landscape (YouTube)</option>
-                    <option value="1080x1920">📱 9:16 Vertical (Reels/Shorts/TikTok)</option>
-                    <option value="1080x1080">🟦 1:1 Square (Instagram)</option>
-                    <option value="1280x720">🖥️ 16:9 HD 720p</option>
+                    <option value="1920x1080">🖥️ 1920 × 1080 (16:9 Landscape)</option>
+                    <option value="1080x1920">📱 1080 × 1920 (9:16 Vertical)</option>
+                    <option value="1080x1080">🟦 1080 × 1080 (Square)</option>
+                    <option value="1280x720">🖥️ 1280 × 720 (HD 720p)</option>
+                </select>
+                <label style="margin-top:8px;">Frame Rate</label>
+                <select id="fps">
+                    <option value="24">24 FPS (Film)</option>
+                    <option value="30" selected>30 FPS (Standard)</option>
+                    <option value="60">60 FPS (Smooth)</option>
                 </select>
             </section>
 
-            <!-- 4. Title & Subtitle -->
+            <!-- Save/Load Projects -->
             <section class="card">
-                <h3>4. 🏷️ Titles</h3>
-                <label>Main Title</label>
-                <input type="text" id="titleInput" value="Your Title Here">
-                <label style="margin-top:6px;">Subtitle</label>
-                <input type="text" id="subTitleInput" value="Subtitle or Tagline">
-                <div class="form-row" style="margin-top:8px;">
-                    <div>
-                        <label><input type="checkbox" id="showTitle" checked> Show Title</label>
-                    </div>
-                    <div>
-                        <label><input type="checkbox" id="showSubtitle" checked> Show Sub</label>
-                    </div>
+                <h3>💾 3. My Projects</h3>
+                <div class="btn-row">
+                    <button id="saveBtn" class="btn btn-secondary">💾 Save</button>
+                    <button id="newBtn" class="btn btn-secondary">➕ New</button>
+                    <button id="showProjectsBtn" class="btn btn-secondary">📂 Load</button>
                 </div>
+                <div id="projectsList" class="projects-list hidden"></div>
             </section>
 
-            <!-- 5. Style Customization -->
+            <!-- Template Examples -->
             <section class="card">
-                <h3>5. 🎨 Styling</h3>
-                
-                <label>Background Type</label>
-                <select id="bgType">
-                    <option value="gradient" selected>Gradient</option>
-                    <option value="solid">Solid Color</option>
-                    <option value="image">Image</option>
-                    <option value="video">Video</option>
+                <h3>💡 4. Load Example Template</h3>
+                <select id="exampleTemplate">
+                    <option value="">-- Choose Example --</option>
+                    <option value="memorial">🕊️ Memorial Tribute</option>
+                    <option value="karaoke">🎤 Karaoke Lyrics</option>
+                    <option value="tiktok">📱 TikTok Style</option>
+                    <option value="quote">💬 Quote Card</option>
+                    <option value="podcast">🎙️ Podcast Clip</option>
                 </select>
-
-                <div id="gradientPicker" class="form-row" style="margin-top:6px;">
-                    <div>
-                        <label>Color 1</label>
-                        <input type="color" id="bgColor1" value="#667eea">
-                    </div>
-                    <div>
-                        <label>Color 2</label>
-                        <input type="color" id="bgColor2" value="#764ba2">
-                    </div>
-                </div>
-
-                <div id="solidPicker" class="hidden" style="margin-top:6px;">
-                    <label>Color</label>
-                    <input type="color" id="bgSolid" value="#1a1a2e">
-                </div>
-
-                <div id="mediaPicker" class="hidden" style="margin-top:6px;">
-                    <input type="file" id="bgMediaInput" accept="image/*,video/*" class="file-input">
-                    <label style="margin-top:6px;"><input type="checkbox" id="bgOverlay" checked> Dark Overlay</label>
-                </div>
-
-                <div class="form-row" style="margin-top:10px;">
-                    <div>
-                        <label>Title Font</label>
-                        <select id="titleFont">
-                            <option value="'Georgia', serif">Georgia</option>
-                            <option value="'Playfair Display', serif" selected>Playfair Display</option>
-                            <option value="'Montserrat', sans-serif">Montserrat</option>
-                            <option value="'Bebas Neue', sans-serif">Bebas Neue</option>
-                            <option value="'Dancing Script', cursive">Dancing Script</option>
-                            <option value="'Poppins', sans-serif">Poppins</option>
-                            <option value="'Inter', sans-serif">Inter</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label>Title Color</label>
-                        <input type="color" id="titleColor" value="#d4af37">
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div>
-                        <label>Caption Font</label>
-                        <select id="captionFont">
-                            <option value="'Georgia', serif">Georgia</option>
-                            <option value="'Montserrat', sans-serif" selected>Montserrat</option>
-                            <option value="'Poppins', sans-serif">Poppins</option>
-                            <option value="'Bebas Neue', sans-serif">Bebas Neue</option>
-                            <option value="'Inter', sans-serif">Inter</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label>Caption Color</label>
-                        <input type="color" id="captionColor" value="#ffffff">
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div>
-                        <label>Caption Size (<span id="capSizeVal">42</span>px)</label>
-                        <input type="range" id="captionSize" min="20" max="90" value="42">
-                    </div>
-                    <div>
-                        <label>Highlight</label>
-                        <input type="color" id="highlightColor" value="#ffe600">
-                    </div>
-                </div>
-
-                <label>Caption Animation</label>
-                <select id="captionAnimation">
-                    <option value="fade" selected>Fade In</option>
-                    <option value="karaoke">🎤 Karaoke Highlight</option>
-                    <option value="typewriter">⌨️ Typewriter</option>
-                    <option value="popup">💥 Pop Up</option>
-                    <option value="slideup">🔼 Slide Up</option>
-                    <option value="none">None (Instant)</option>
-                </select>
-
-                <label style="margin-top:8px;">Caption Style</label>
-                <select id="captionStyle">
-                    <option value="box" selected>📦 Box Background</option>
-                    <option value="shadow">🌑 Text Shadow Only</option>
-                    <option value="outline">⚫ Outline Text</option>
-                    <option value="glow">✨ Neon Glow</option>
-                    <option value="minimal">➖ Minimal Clean</option>
-                </select>
-
-                <label style="margin-top:8px;">Caption Position</label>
-                <select id="captionPosition">
-                    <option value="center">Center</option>
-                    <option value="bottom" selected>Bottom</option>
-                    <option value="top">Top</option>
-                </select>
+                <button id="loadExampleBtn" class="btn btn-primary" style="margin-top:8px;width:100%;">Load Template</button>
             </section>
 
-            <!-- 6. Extras -->
+            <!-- Export -->
             <section class="card">
-                <h3>6. 🧩 Extra Elements</h3>
-                <div class="form-row">
-                    <div>
-                        <label><input type="checkbox" id="showVisualizer"> Waveform</label>
-                    </div>
-                    <div>
-                        <label><input type="checkbox" id="showProgress" checked> Progress Bar</label>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div>
-                        <label><input type="checkbox" id="showBadge"> Watermark</label>
-                    </div>
-                </div>
-                <input type="text" id="badgeInput" value="@yourhandle" placeholder="Watermark text..." style="margin-top:4px;">
-            </section>
-
-            <!-- 7. Captions -->
-            <section class="card">
-                <h3>7. 📝 Captions</h3>
-                <textarea id="scriptInput" rows="4" placeholder="Paste your full script/lyrics here, then click Auto-Split..."></textarea>
-                <div class="btn-group">
-                    <button id="autoSplitBtn" class="btn btn-secondary">⚡ Auto Split</button>
-                    <button id="addCaptionBtn" class="btn btn-secondary">+ Add</button>
-                    <button id="importSrtBtn" class="btn btn-secondary">📄 SRT</button>
-                    <button id="clearCaptionsBtn" class="btn btn-secondary">🗑️ Clear</button>
-                    <input type="file" id="srtFileInput" accept=".srt,.vtt" style="display:none;">
-                </div>
-                <div id="captionList" class="caption-items-list"></div>
+                <h3>🎬 5. Export</h3>
+                <select id="exportFormat">
+                    <option value="mp4" selected>MP4 (HD Quality)</option>
+                    <option value="webm">WebM (Faster)</option>
+                </select>
+                <button id="exportBtn" class="btn btn-export" disabled>🎬 Export Video</button>
             </section>
         </aside>
 
-        <!-- ===== MAIN VIEWPORT ===== -->
-        <main class="viewport">
-            <div class="stage-container">
-                <div id="videoStage" class="video-stage">
-                    <div id="stageBg" class="stage-bg"></div>
-                    <img id="stageBgImg" class="stage-bg-media hidden" alt="">
-                    <video id="stageBgVideo" class="stage-bg-media hidden" loop muted playsinline></video>
-                    <div id="stageOverlay" class="stage-overlay hidden"></div>
-
-                    <!-- Watermark -->
-                    <div id="stageBadge" class="stage-badge hidden">@yourhandle</div>
-
-                    <!-- Header -->
-                    <div id="stageHeader" class="stage-header">
-                        <h1 id="stageTitle">Your Title Here</h1>
-                        <p id="stageSubtitle">Subtitle or Tagline</p>
-                    </div>
-
-                    <!-- Captions -->
-                    <div id="stageCaptions" class="stage-captions pos-bottom">
-                        <div id="stageCaptionText" class="caption-text style-box">Upload audio and captions to preview</div>
-                    </div>
-
-                    <!-- Visualizer -->
-                    <div id="stageVisualizer" class="stage-visualizer hidden"></div>
-
-                    <!-- Progress -->
-                    <div id="stageProgress" class="stage-progress">
-                        <div id="stageProgressBar" class="stage-progress-fill"></div>
-                    </div>
+        <!-- ===== CENTER: HTML CODE EDITOR ===== -->
+        <main class="editor-area">
+            <div class="editor-header">
+                <h3>✏️ Paste Your HTML Design</h3>
+                <div class="editor-tools">
+                    <button id="formatBtn" class="btn btn-secondary">🎨 Beautify</button>
+                    <button id="clearBtn" class="btn btn-secondary">🗑️ Clear</button>
+                    <button id="applyBtn" class="btn btn-primary">▶ Apply & Preview</button>
                 </div>
             </div>
+            <textarea id="htmlEditor" spellcheck="false" placeholder="Paste your complete HTML here...
 
-            <canvas id="exportCanvas" style="display:none;"></canvas>
-
-            <!-- Player -->
-            <div class="player-bar">
-                <button id="playBtn" class="btn-circle" disabled>▶</button>
-                <span id="timeDisplay">0:00 / 0:00</span>
-                <input type="range" id="timeScrubber" min="0" max="100" value="0" step="0.05">
-                <div class="export-actions">
-                    <select id="exportFormat">
-                        <option value="webm">WebM (Fast)</option>
-                        <option value="mp4" selected>MP4 (HD)</option>
-                    </select>
-                    <button id="exportBtn" class="btn btn-export" disabled>🎬 Export</button>
-                </div>
-            </div>
-
-            <!-- Export Modal -->
-            <div id="exportModal" class="modal hidden">
-                <div class="modal-content">
-                    <h3 id="exportTitle">Rendering Video...</h3>
-                    <div class="progress-outer">
-                        <div id="exportProgressFill" class="progress-inner"></div>
-                    </div>
-                    <p id="exportDetail">Starting...</p>
-                    <button id="cancelExportBtn" class="btn btn-secondary" style="margin-top:12px;">Cancel</button>
-                </div>
-            </div>
+Example:
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: black; color: white; }
+        /* your CSS here */
+    </style>
+</head>
+<body>
+    <h1>Your Content</h1>
+    <script>
+        // Your captions array
+        const captions = [
+            { start: 0, end: 3, text: 'Hello' },
+            { start: 3, end: 6, text: 'World' }
+        ];
+    </script>
+</body>
+</html>"></textarea>
         </main>
+
+        <!-- ===== RIGHT: LIVE PREVIEW ===== -->
+        <section class="preview-area">
+            <div class="preview-header">
+                <h3>👀 Live Preview</h3>
+                <span id="previewStatus" class="status">Waiting for HTML...</span>
+            </div>
+
+            <div class="preview-frame-wrap">
+                <iframe id="previewFrame" class="preview-frame" sandbox="allow-scripts allow-same-origin"></iframe>
+            </div>
+
+            <!-- Player Controls -->
+            <div class="player">
+                <button id="playBtn" class="play-btn" disabled>▶</button>
+                <span id="timeDisplay">0:00 / 0:00</span>
+                <input type="range" id="scrubber" min="0" max="100" value="0" step="0.05">
+            </div>
+
+            <canvas id="exportCanvas" hidden></canvas>
+        </section>
+
+        <!-- Export Modal -->
+        <div id="exportModal" class="modal hidden">
+            <div class="modal-content">
+                <h3 id="exportTitle">Exporting...</h3>
+                <div class="progress-outer">
+                    <div id="exportProgress" class="progress-inner"></div>
+                </div>
+                <p id="exportDetail">Preparing...</p>
+                <button id="cancelExportBtn" class="btn btn-secondary" style="margin-top:14px;">Cancel</button>
+            </div>
+        </div>
     </div>
 
-    <script src="templates.js"></script>
+    <script src="examples.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
