@@ -22,14 +22,12 @@ body {
     overflow: hidden;
 }
 
-/* ===== LAYOUT: 3-column ===== */
 .app {
     display: grid;
-    grid-template-columns: 320px 1fr 420px;
+    grid-template-columns: 340px 1fr 440px;
     height: 100vh;
 }
 
-/* ===== SIDEBAR ===== */
 .sidebar {
     background: var(--card-bg);
     border-right: 1px solid var(--border);
@@ -51,7 +49,6 @@ body {
 }
 .app-header p { font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; }
 
-/* Cards */
 .card {
     background: #1a1a24;
     border: 1px solid var(--border);
@@ -67,6 +64,13 @@ body {
     font-weight: 600;
 }
 
+.hint {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
 label {
     display: block;
     font-size: 0.68rem;
@@ -74,7 +78,7 @@ label {
     margin-bottom: 4px;
 }
 
-select, input[type="text"] {
+select, input[type="text"], input[type="number"] {
     width: 100%;
     background: #0d0d14;
     border: 1px solid var(--border);
@@ -84,12 +88,17 @@ select, input[type="text"] {
     font-size: 0.78rem;
     font-family: inherit;
 }
-select:focus, input:focus, textarea:focus {
-    outline: none;
-    border-color: var(--primary);
+
+input[type="color"] {
+    width: 100%;
+    height: 34px;
+    background: #0d0d14;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+    padding: 2px;
 }
 
-/* Drop Zone */
 .drop-zone {
     border: 2px dashed var(--border);
     border-radius: 6px;
@@ -111,7 +120,6 @@ select:focus, input:focus, textarea:focus {
     border-radius: 5px;
 }
 
-/* Buttons */
 .btn-row { display: flex; gap: 4px; }
 
 .btn {
@@ -142,7 +150,70 @@ select:focus, input:focus, textarea:focus {
 }
 .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-/* Projects List */
+/* SCENES */
+.scenes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.scene-item {
+    background: #0d0d14;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.scene-item:hover { border-color: var(--primary); }
+
+.scene-thumb {
+    width: 50px;
+    height: 30px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    background-size: cover;
+    background-position: center;
+}
+
+.scene-info {
+    flex: 1;
+    min-width: 0;
+}
+.scene-info .name {
+    font-size: 0.75rem;
+    color: var(--text);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.scene-info .time {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.scene-actions {
+    display: flex;
+    gap: 4px;
+}
+.scene-actions button {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    font-size: 0.85rem;
+}
+.scene-actions button:hover { color: var(--primary); }
+.scene-actions .delete:hover { color: var(--danger); }
+
 .projects-list {
     margin-top: 8px;
     max-height: 200px;
@@ -167,7 +238,7 @@ select:focus, input:focus, textarea:focus {
     font-size: 0.85rem;
 }
 
-/* ===== EDITOR AREA (Center) ===== */
+/* EDITOR */
 .editor-area {
     display: flex;
     flex-direction: column;
@@ -200,9 +271,8 @@ select:focus, input:focus, textarea:focus {
     outline: none;
     tab-size: 4;
 }
-#htmlEditor::placeholder { color: #444; }
 
-/* ===== PREVIEW AREA (Right) ===== */
+/* PREVIEW */
 .preview-area {
     display: flex;
     flex-direction: column;
@@ -228,7 +298,7 @@ select:focus, input:focus, textarea:focus {
 .status.ready { color: var(--success); }
 .status.error { color: var(--danger); }
 
-.preview-frame-wrap {
+.stage-wrap {
     flex: 1;
     background: #000;
     border-radius: var(--radius);
@@ -238,16 +308,37 @@ select:focus, input:focus, textarea:focus {
     justify-content: center;
     box-shadow: 0 8px 30px rgba(0,0,0,0.6);
     position: relative;
+    min-height: 300px;
 }
 
-.preview-frame {
-    border: none;
+/* This is the actual rendering stage */
+.video-stage {
+    position: relative;
+    width: 1280px;
+    height: 720px;
     background: #000;
-    display: block;
+    overflow: hidden;
     transform-origin: center center;
+    flex-shrink: 0;
 }
 
-/* Player */
+.scene-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    transition: opacity 0.5s, transform 0.5s;
+}
+
+.html-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
 .player {
     background: #0d0d14;
     border: 1px solid var(--border);
@@ -275,7 +366,6 @@ select:focus, input:focus, textarea:focus {
 #scrubber { flex: 1; accent-color: var(--primary); }
 #timeDisplay { font-size: 0.72rem; min-width: 80px; font-variant-numeric: tabular-nums; }
 
-/* Modal */
 .modal {
     position: fixed;
     inset: 0;
@@ -293,6 +383,8 @@ select:focus, input:focus, textarea:focus {
     border-radius: 12px;
     width: 380px;
     text-align: center;
+    max-height: 90vh;
+    overflow-y: auto;
 }
 .progress-outer {
     height: 8px;
@@ -308,14 +400,20 @@ select:focus, input:focus, textarea:focus {
     transition: width 0.2s;
 }
 #exportDetail { font-size: 0.78rem; color: var(--text-muted); }
-
 .hidden { display: none !important; }
 
-/* Responsive */
-@media (max-width: 1200px) {
-    .app { grid-template-columns: 280px 1fr 380px; }
+/* Scene animations */
+.scene-fadeIn { animation: sceneFadeIn 1s ease-out; }
+@keyframes sceneFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.scene-zoom { animation: sceneZoom 10s ease-out infinite; }
+@keyframes sceneZoom { 
+    0% { transform: scale(1); } 
+    100% { transform: scale(1.15); } 
 }
-@media (max-width: 900px) {
-    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr 1fr; }
-    .sidebar { max-height: 35vh; }
+
+.scene-pan { animation: scenePan 10s linear infinite; }
+@keyframes scenePan { 
+    0% { transform: translateX(-3%); } 
+    100% { transform: translateX(3%); } 
 }
