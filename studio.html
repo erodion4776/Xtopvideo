@@ -39,7 +39,69 @@ $('filter').onchange=()=>v.style.filter=$('filter').value;$('volume').oninput=()
 $('caption').onclick=()=>{$('text').value=['Every frame tells a story.','A moment worth remembering.','Create. Capture. Share.','The details make the difference.'][Math.floor(Math.random()*4)];textLayer();msg('Caption idea added. Edit it to make it yours.')};
 $('new').onclick=()=>{if(!confirm('Start a new project? Current edits will be cleared.'))return;s.clips.forEach(c=>URL.revokeObjectURL(c.url));s.clips=[];s.index=0;v.pause();v.removeAttribute('src');v.load();$('stage').classList.add('empty');$('status').textContent='No media loaded';$('text').value='';textLayer();drawList()};
 function paintText(ctx,w,h){let t=$('text').value;if(!t)return;let size=Math.max(22,w*.05);ctx.font='800 '+size+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';let y=$('position').value==='top'?h*.15:$('position').value==='bottom'?h*.85:h/2;ctx.fillStyle=$('color').value;t.split('\n').forEach((line,i,a)=>ctx.fillText(line,w/2,y+(i-(a.length-1)/2)*size*1.2,w*.84))}
-$('export').onclick=async()=>{if(!current())return msg('Upload a video before exporting.');if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)return msg('Use Chrome for browser video export.');v.pause();const w=v.videoWidth||1280,h=v.videoHeight||720,canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d'),stream=canvas.captureStream(30);let ac,source,audioEl;try{ac=new(window.AudioContext||window.webkitAudioContext)();const dest=ac.createMediaStreamDestination();if(s.audio){audioEl=new Audio(s.audioUrl);audioEl.loop=true;const node=ac.createMediaElementSource(audioEl);node.connect(dest);node.connect(ac.destination);await audioEl.play()}else{source=ac.createMediaElementSource(v);source.connect(dest);source.connect(ac.destination)}dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));await ac.resume()}catch(err){console.warn('Audio routing unavailable',err)}
-const mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(x=>MediaRecorder.isTypeSupported(x))||'video/webm',rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:+$('quality').value}),chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};let start=s.start,end=s.end||v.duration;try{v.currentTime=start;await new Promise(r=>v.onseeked=r);await v.play();rec.start(200);$('export').disabled=true;$('exportStatus').textContent='Rendering… keep this tab open.';await new Promise((resolve,reject)=>{rec.onstop=resolve;rec.onerror=reject;const frame=()=>{if(rec.state!=='recording')return;ctx.filter=$('filter').value;ctx.drawImage(v,0,0,w,h);ctx.filter='none';paintText(ctx,w,h);$('exportStatus').textContent='Rendering '+Math.min(100,Math.round((v.currentTime-start)/(end-start)*100))+'%';if(v.currentTime>=end||v.ended){v.pause();rec.stop()}else requestAnimationFrame(frame)};frame()});const blob=new Blob(chunks,{type:mime}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='xtop-video-'+Date.now()+'.webm';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);$('exportStatus').textContent='Export complete · WebM';msg('Your video has been exported.')}catch(err){msg('Export failed: '+err.message);$('exportStatus').textContent='Export failed'}finally{v.pause();v.currentTime=start;stream.getTracks().forEach(t=>t.stop());if(audioEl)audioEl.pause();if(ac)await ac.close().catch(()=>{});$('export').disabled=false}};
+$('export').onclick=async()=>{
+if(!s.clips.length)return msg('Upload at least one video clip before exporting.');
+if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)return msg('Use Chrome for browser video export.');
+v.pause();
+const first=s.clips[0];
+v.src=first.url;v.load();
+await new Promise((resolve,reject)=>{v.onloadedmetadata=resolve;v.onerror=()=>reject(new Error('Could not load a video clip.'))});
+const w=v.videoWidth||1280,h=v.videoHeight||720,canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+const ctx=canvas.getContext('2d'),stream=canvas.captureStream(30);
+let ac=null,audioEl=null,videoAudio=null;
+try{
+ ac=new(window.AudioContext||window.webkitAudioContext)();
+ const dest=ac.createMediaStreamDestination();
+ if(s.audio){audioEl=new Audio(s.audioUrl);audioEl.loop=true;const node=ac.createMediaElementSource(audioEl);node.connect(dest);node.connect(ac.destination);await ac.resume();await audioEl.play()}
+ else{videoAudio=ac.createMediaElementSource(v);videoAudio.connect(dest);videoAudio.connect(ac.destination);await ac.resume()}
+ dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+}catch(err){console.warn('Audio export unavailable',err)}
+const mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(x=>MediaRecorder.isTypeSupported(x))||'video/webm';
+const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:+$('quality').value}),chunks=[];
+rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+const selectedIndex=s.index,trimStart=s.start,trimEnd=s.end;
+function drawFrame(){ctx.filter=$('filter').value;ctx.drawImage(v,0,0,w,h);ctx.filter='none';paintText(ctx,w,h)}
+function wait(ms){return new Promise(r=>setTimeout(r,ms))}
+try{
+ $('export').disabled=true;$('exportStatus').textContent='Preparing sequence…';
+ rec.start(200);
+ if(audioEl)await audioEl.play();
+ let total=0;
+ for(let i=0;i<s.clips.length;i++){
+  const clip=s.clips[i];
+  if(v.src!==clip.url){v.pause();v.src=clip.url;v.load();await new Promise((resolve,reject)=>{v.onloadedmetadata=resolve;v.onerror=()=>reject(new Error('Could not load '+clip.file.name))})}
+  const from=i===selectedIndex?trimStart:0;
+  const to=i===selectedIndex?(trimEnd||v.duration):v.duration;
+  if(!(to>from))throw new Error('Invalid trim range for '+clip.file.name);
+  v.currentTime=from;await new Promise(resolve=>{if(Math.abs(v.currentTime-from)<.03)resolve();else v.onseeked=resolve});
+  await v.play();
+  $('exportStatus').textContent='Rendering clip '+(i+1)+' of '+s.clips.length;
+  await new Promise((resolve,reject)=>{
+   let raf=0;
+   const frame=()=>{
+    if(rec.state!=='recording'){cancelAnimationFrame(raf);resolve();return}
+    drawFrame();
+    const pct=Math.min(100,Math.round(((total+Math.max(0,v.currentTime-from))/(s.clips.reduce((sum,x,j)=>sum+(j===selectedIndex?(trimEnd||x.duration||0)-trimStart:(x.duration||0)),0)||1))*100));
+    $('exportStatus').textContent='Rendering '+pct+'% · clip '+(i+1)+'/'+s.clips.length;
+    if(v.currentTime>=to||v.ended){v.pause();resolve();return}
+    raf=requestAnimationFrame(frame);
+   };
+   v.onerror=()=>reject(new Error('Playback failed for '+clip.file.name));
+   raf=requestAnimationFrame(frame);
+  });
+  total+=to-from;
+  if(i<s.clips.length-1){
+   // A short fade-to-black transition between consecutive clips.
+   const frames=9;
+   for(let k=0;k<frames;k++){ctx.fillStyle='black';ctx.fillRect(0,0,w,h);await wait(1000/30)}
+  }
+ }
+ await new Promise((resolve,reject)=>{rec.onstop=resolve;rec.onerror=reject;rec.stop()});
+ const blob=new Blob(chunks,{type:mime}),url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download='xtop-video-'+Date.now()+'.webm';a.click();setTimeout(()=>URL.revokeObjectURL(url),6000);
+ $('exportStatus').textContent='Export complete · '+s.clips.length+' clip(s) · WebM';msg('Your edited sequence has been exported.');
+}catch(err){console.error(err);if(rec.state==='recording')rec.stop();$('exportStatus').textContent='Export failed';msg('Export failed: '+err.message)}
+finally{v.pause();stream.getTracks().forEach(t=>t.stop());if(audioEl)audioEl.pause();if(ac)await ac.close().catch(()=>{});$('export').disabled=false;v.playbackRate=+$('speed').value}
+};
 })();
 </script></body></html>
