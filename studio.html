@@ -16,7 +16,7 @@
 <section class="card"><h3>T Text overlay</h3><div class="field"><label>Title / caption</label><textarea id="text" rows="3" placeholder="Type your text..."></textarea></div><div class="field"><label>Text colour</label><input id="color" type="color" value="#ffffff"></div><div class="field"><label>Position</label><select id="position"><option value="center">Centre</option><option value="top">Top</option><option value="bottom">Bottom</option></select></div><button class="btn" id="clearText">Clear text</button></section>
 <section class="card"><h3>CC Timed subtitles</h3><div class="field"><label>Subtitle text</label><textarea id="subText" rows="2" placeholder="Type subtitle for the selected clip"></textarea></div><div class="field"><label>Start · seconds</label><input id="subStart" type="number" min="0" step=".1" value="0"></div><div class="field"><label>End · seconds</label><input id="subEnd" type="number" min="0" step=".1" value="3"></div><div style="display:flex;gap:6px"><button class="btn primary" id="addSub">Add subtitle</button><button class="btn" id="downloadSrt">Export SRT</button></div><div id="subList" class="clip-list"></div><p class="hint">Times are measured from the original start of each clip. Edit an existing subtitle with its Edit control. SRT export follows the edited sequence and selected trim.</p></section>
 <section class="card"><h3>◐ Colour & effects</h3><div class="field"><label>Filter</label><select id="filter"><option value="none">Original</option><option value="grayscale(1)">Black & white</option><option value="sepia(.8)">Vintage</option><option value="contrast(1.25) saturate(1.2)">Cinematic</option><option value="saturate(1.8)">Vivid</option><option value="brightness(1.15)">Bright</option></select></div><div class="field"><label>Volume</label><input id="volume" type="range" min="0" max="1" step=".05" value="1"></div><div class="field"><label>Playback speed</label><select id="speed"><option value=".5">0.5×</option><option value="1">1× Normal</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div></section>
-<section class="card"><h3>Export settings</h3><div class="field"><label>Video bitrate</label><select id="quality"><option value="2500000">Standard · 2.5 Mbps</option><option value="5000000" selected>High · 5 Mbps</option><option value="8000000">Very high · 8 Mbps</option></select></div><p class="hint">Exports as WebM. MP4 conversion and cloud AI features are planned upgrades.</p><div class="hint" id="exportStatus"></div></section>
+<section class="card"><h3>Export settings</h3><div class="field"><label>Video bitrate</label><select id="quality"><option value="2500000">Standard · 2.5 Mbps</option><option value="5000000" selected>High · 5 Mbps</option><option value="8000000">Very high · 8 Mbps</option></select></div><div class="field"><label>Clip transition</label><select id="transition"><option value="fade">Fade through black</option><option value="cut">Hard cut</option></select></div><div class="field"><label>Transition duration</label><select id="transitionDuration"><option value="0.2">0.2 seconds</option><option value="0.4" selected>0.4 seconds</option><option value="0.7">0.7 seconds</option><option value="1">1 second</option></select></div><p class="hint">Transitions are applied between clips during WebM export. MP4 conversion and cloud AI features are not connected yet.</p><div class="hint" id="exportStatus"></div></section>
 </div></aside></main><div class="bottom">Your media stays in your browser while editing · XTOP Video Studio</div><div class="toast" id="toast"></div>
 <script>
 (()=>{const $=id=>document.getElementById(id),s={clips:[],index:0,audioUrl:null,audio:null,start:0,end:0,subs:[]};const v=$('video');
@@ -51,6 +51,8 @@ if(!s.clips.length)return msg('Upload at least one video clip before exporting.'
 if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)return msg('Use Chrome for browser video export.');
 v.pause();
 const first=s.clips[0];
+const probeDuration=clip=>clip.duration?Promise.resolve(clip.duration):new Promise(resolve=>{const m=document.createElement('video');m.preload='metadata';m.onloadedmetadata=()=>{clip.duration=m.duration;resolve(m.duration);m.removeAttribute('src')};m.onerror=()=>resolve(0);m.src=clip.url});
+await Promise.all(s.clips.map(probeDuration));
 v.src=first.url;v.load();
 await new Promise((resolve,reject)=>{v.onloadedmetadata=resolve;v.onerror=()=>reject(new Error('Could not load a video clip.'))});
 const w=v.videoWidth||1280,h=v.videoHeight||720,canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
@@ -67,7 +69,10 @@ const mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/web
 const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:+$('quality').value}),chunks=[];
 rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
 const selectedIndex=s.index,trimStart=s.start,trimEnd=s.end;
-function drawFrame(clipIndex){ctx.filter=$('filter').value;ctx.drawImage(v,0,0,w,h);ctx.filter='none';paintText(ctx,w,h);paintSubtitle(ctx,w,h,v.currentTime,clipIndex)}
+const transition=$('transition').value,transitionSeconds=+$('transitionDuration').value;
+const durations=s.clips.map((x,i)=>Math.max(0,(i===selectedIndex?(trimEnd||x.duration)-trimStart:x.duration)||0));
+const sequenceDuration=durations.reduce((a,b)=>a+b,0);
+function drawFrame(clipIndex,fadeAlpha=0){ctx.filter=$('filter').value;ctx.drawImage(v,0,0,w,h);ctx.filter='none';paintText(ctx,w,h);paintSubtitle(ctx,w,h,v.currentTime,clipIndex);if(fadeAlpha>0){ctx.fillStyle='rgba(0,0,0,'+Math.min(1,fadeAlpha)+')';ctx.fillRect(0,0,w,h)}}
 function wait(ms){return new Promise(r=>setTimeout(r,ms))}
 try{
  $('export').disabled=true;$('exportStatus').textContent='Preparing sequence…';
@@ -87,8 +92,11 @@ try{
    let raf=0;
    const frame=()=>{
     if(rec.state!=='recording'){cancelAnimationFrame(raf);resolve();return}
-    drawFrame(i);
-    const pct=Math.min(100,Math.round(((total+Math.max(0,v.currentTime-from))/(s.clips.reduce((sum,x,j)=>sum+(j===selectedIndex?(trimEnd||x.duration||0)-trimStart:(x.duration||0)),0)||1))*100));
+    const fadeFrames=transition==='fade'&&i>0?Math.max(1,Math.round(transitionSeconds*30)):0;
+    const elapsed=Math.max(0,v.currentTime-from);
+    const fadeAlpha=fadeFrames?Math.max(0,1-Math.min(1,elapsed/transitionSeconds)):0;
+    drawFrame(i,fadeAlpha);
+    const pct=Math.min(100,Math.round(((total+Math.max(0,v.currentTime-from))/(sequenceDuration||1))*100));
     $('exportStatus').textContent='Rendering '+pct+'% · clip '+(i+1)+'/'+s.clips.length;
     if(v.currentTime>=to||v.ended){v.pause();resolve();return}
     raf=requestAnimationFrame(frame);
@@ -97,10 +105,10 @@ try{
    raf=requestAnimationFrame(frame);
   });
   total+=to-from;
-  if(i<s.clips.length-1){
-   // A short fade-to-black transition between consecutive clips.
-   const frames=9;
-   for(let k=0;k<frames;k++){ctx.fillStyle='black';ctx.fillRect(0,0,w,h);await wait(1000/30)}
+  if(i<s.clips.length-1&&transition==='fade'){
+   // Fade the outgoing frame to black; the next clip fades up from black.
+   const frames=Math.max(1,Math.round(transitionSeconds*30));
+   for(let k=1;k<=frames;k++){drawFrame(i,k/frames);await wait(1000/30)}
   }
  }
  await new Promise((resolve,reject)=>{rec.onstop=resolve;rec.onerror=reject;rec.stop()});
