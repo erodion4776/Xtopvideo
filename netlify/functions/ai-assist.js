@@ -6,6 +6,11 @@ const MAX_CALLS = 10;
 const ALLOWED_VOICES = new Set([
   "Kore", "Puck", "Charon", "Aoede", "Fenrir", "Zephyr"
 ]);
+const ALLOWED_INTERACTION_MODELS = new Set([
+  "gemini-3.8-flash",
+  "gemini-3.8-flash-tts",
+  "gemini-3.8-flash-lite-tts"
+]);
 
 function reply(statusCode, payload) {
   return {
@@ -131,8 +136,8 @@ exports.handler = async function (event) {
     const raw = event.isBase64Encoded
       ? Buffer.from(event.body || "", "base64").toString("utf8")
       : (event.body || "");
-    if (Buffer.byteLength(raw, "utf8") > 12000) {
-      return reply(413, { error: "AI request is too large. Shorten the text and try again." });
+    if (Buffer.byteLength(raw, "utf8") > 4800000) {
+      return reply(413, { error: "This request exceeds Netlify's secure AI proxy upload limit. Use the optional personal Gemini key for large media requests." });
     }
     body = JSON.parse(raw || "{}");
   } catch (_) {
@@ -140,8 +145,8 @@ exports.handler = async function (event) {
   }
 
   const action = body.action;
-  const textModel = process.env.GEMINI_TEXT_MODEL || "gemini-3.8-flash-lite";
-  const ttsModel = process.env.GEMINI_TTS_MODEL || "gemini-3.8-flash-lite-tts";
+  const textModel = process.env.GEMINI_TEXT_MODEL || "gemini-3.8-flash";
+  const ttsModel = process.env.GEMINI_TTS_MODEL || "gemini-3.8-flash-tts";
 
   if (action === "status") {
     return reply(200, {
@@ -153,6 +158,44 @@ exports.handler = async function (event) {
   }
 
   try {
+    if (action === "interaction") {
+      const payload = body.payload;
+      if (!payload || typeof payload !== "object" ||
+          !ALLOWED_INTERACTION_MODELS.has(payload.model)) {
+        return reply(400, { error: "This AI model is not enabled on the secure proxy." });
+      }
+      const requestBody = JSON.stringify(payload);
+      if (Buffer.byteLength(requestBody, "utf8") > 4700000) {
+        return reply(413, { error: "This media request is too large for Netlify's 6 MB function limit. Use your personal Gemini key for large video analysis." });
+      }
+      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": apiKey,
+          "Api-Revision": "2026-05-20"
+        },
+        body: requestBody,
+        signal: AbortSignal.timeout(55000)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = response.status === 429
+          ? "Gemini quota or rate limit reached. Try again later."
+          : response.status === 401 || response.status === 403
+            ? "Gemini rejected the server API key or model access. Check Google AI Studio."
+            : "Gemini interaction failed. Check model access and try again.";
+        const error = new Error(message);
+        error.statusCode = response.status === 429 ? 429 : 502;
+        throw error;
+      }
+      const responseBody = JSON.stringify(data);
+      if (Buffer.byteLength(responseBody, "utf8") > 5000000) {
+        return reply(413, { error: "The AI result is too large for the secure proxy. Use the personal Gemini key for image or video generation." });
+      }
+      return reply(200, { ok: true, result: data });
+    }
+
     if (action === "caption") {
       const brief = String(body.brief || "").trim();
       if (!brief || brief.length > 1800) {
