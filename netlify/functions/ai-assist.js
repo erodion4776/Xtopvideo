@@ -149,12 +149,19 @@ exports.handler = async function (event) {
   const ttsModel = process.env.GEMINI_TTS_MODEL || "gemini-3.8-flash-tts";
 
   if (action === "status") {
-    return reply(200, {
-      configured: true,
-      provider: "Google Gemini",
-      textModel,
-      ttsModel
-    });
+    try {
+      await callGeminiText(apiKey, textModel, "Reply with exactly: XTOP AI ready", false);
+      return reply(200, {
+        configured: true,
+        provider: "Google Gemini",
+        textModel,
+        ttsModel
+      });
+    } catch (error) {
+      return reply(error.statusCode || 502, {
+        error: error.message || "Gemini connection test failed."
+      });
+    }
   }
 
   try {
